@@ -2,6 +2,7 @@
 client_secret.json
 token.pickle
 credentials.json
+skunexus_config.json
 
 # Build artifacts
 build/
