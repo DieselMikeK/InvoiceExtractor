@@ -1,0 +1,24 @@
+# Credentials and tokens - DO NOT COMMIT
+client_secret.json
+token.pickle
+credentials.json
+
+# Build artifacts
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+*.pyo
+
+# Output files
+invoices/
+invoices_output.xlsx
+processed_log.json
+
+# IDE
+.vscode/
+.idea/
+
+# Exe (too large for git)
+*.exe
