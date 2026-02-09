@@ -19,7 +19,7 @@ COLUMNS = [
     ('location', 'Location'),
     ('memo', 'Memo'),                   # PO number goes here
     ('type', 'Type'),                   # "Item Details" for products, empty for fees
-    ('category', 'Category/Account'),   # "Purchases" or "Freight/Shipping"
+    ('category', 'Category/Account'),   # "Purchases" or "Freight and shipping costs"
     ('product_service', 'Product/Service'),
     ('qty', 'Qty'),
     ('rate', 'Rate'),
@@ -36,6 +36,9 @@ COLUMNS = [
 # Column indices for validation columns (1-indexed for openpyxl)
 VALIDATION_COL = 20  # Column T - SkuNexus Validation
 FAILED_FIELDS_COL = 21  # Column U - SkuNexus Failed Fields
+
+PURCHASES_CATEGORY = 'Purchases'
+FREIGHT_CATEGORY = 'Freight and shipping costs'
 
 
 def get_or_create_workbook(filepath):
@@ -81,7 +84,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     Format matches QuickBooks Bill Import:
     - First row: full invoice info with first line item
     - Additional rows: just Bill No., Type, Category, Description, Amount for each additional item
-    - Shipping row: Bill No., Category="Freight/Shipping", Description="Shipping", Amount
+    - Shipping row: Bill No., Category="Freight and shipping costs", Description="Shipping", Amount
 
     Args:
         filepath: Path to the .xlsx file
@@ -107,9 +110,8 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     bill_date = invoice_data.get('date', '')
     due_date = invoice_data.get('due_date', '')
     memo = invoice_data.get('po_number', '')
-    if memo and not memo.startswith('PO'):
-        memo = f"PO{memo}"
     customer = invoice_data.get('customer', '')
+    total_amount = invoice_data.get('total', '')
 
     line_items = invoice_data.get('line_items', [])
     shipping_cost = invoice_data.get('shipping_cost', '')
@@ -121,6 +123,75 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     first_item = line_items[0] if line_items else {}
 
+    def _normalize_qty_value(value):
+        if value is None:
+            return ''
+        s = str(value).strip()
+        if not s:
+            return ''
+        try:
+            num = float(s.replace(',', ''))
+        except (ValueError, TypeError):
+            return s
+        # If it's effectively an integer, drop decimals
+        if abs(num - round(num)) < 1e-9:
+            return str(int(round(num)))
+        return s
+
+    def _is_discount(item):
+        item_num = str(item.get('item_number', '')).lower()
+        desc = str(item.get('description', '')).lower()
+        return bool(item.get('is_discount')) or ('discount' in item_num) or ('discount' in desc)
+    def _is_core(item):
+        item_num = str(item.get('item_number', '')).lower()
+        desc = str(item.get('description', '')).lower()
+        return item_num == 'core' or item_num.startswith('core ') or item_num.startswith('core-') or desc.startswith('core ')
+    def _is_ere(item):
+        item_num = str(item.get('item_number', '')).lower().strip()
+        desc = str(item.get('description', '')).lower()
+        return item_num in ('e.r.e.', 'ere') or 'environmental regulation expense' in desc
+    def _normalize_shipping_label(text):
+        s = str(text or '').lower()
+        if 'drop ship' in s or 'dropship' in s:
+            return 'Drop Ship'
+        if 'freight' in s or 'frieght' in s:
+            return 'Freight'
+        if 'ship' in s:
+            return 'Shipping'
+        return 'Shipping'
+    def _core_description(item):
+        code = str(item.get('item_number', '')).strip()
+        desc = str(item.get('description', '')).strip()
+        if code and desc:
+            if code.lower() in desc.lower():
+                return desc
+            return f"{code} {desc}".strip()
+        return code or desc
+    def _product_service_for_item(item, is_discount, is_core, is_ere, is_freight):
+        if is_discount:
+            return 'DPP Discount'
+        if is_core:
+            return 'Core'
+        if is_ere:
+            return 'E.R.E.'
+        if is_freight:
+            return _normalize_shipping_label(item.get('description') or item.get('item_number'))
+        return item.get('item_number', '')
+    def _description_for_item(item, is_discount, is_core, is_freight):
+        if is_core:
+            return _core_description(item)
+        if is_discount:
+            return ''
+        if is_freight:
+            return (str(item.get('description', '')).strip()
+                    or str(item.get('item_number', '')).strip())
+        return item.get('description', '')
+
+    first_is_freight = bool(first_item.get('is_freight'))
+    first_is_discount = _is_discount(first_item)
+    first_is_core = _is_core(first_item)
+    first_is_ere = _is_ere(first_item)
+    first_category = FREIGHT_CATEGORY if first_is_freight else PURCHASES_CATEGORY
     row_data = {
         'bill_no': bill_no,
         'vendor': vendor,
@@ -130,13 +201,13 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         'due_date': due_date,
         'location': '',
         'memo': memo,
-        'type': 'Item Details' if first_item else '',
-        'category': 'Purchases' if first_item else '',
-        'product_service': first_item.get('item_number', ''),
-        'qty': first_item.get('quantity', ''),
+        'type': '' if (first_is_freight or first_is_discount) else ('Item Details' if first_item else ''),
+        'category': first_category if first_item else '',
+        'product_service': _product_service_for_item(first_item, first_is_discount, first_is_core, first_is_ere, first_is_freight),
+        'qty': _normalize_qty_value(first_item.get('quantity', '')),
         'rate': first_item.get('unit_price', ''),
-        'description': first_item.get('description', ''),
-        'amount': first_item.get('amount', ''),
+        'description': _description_for_item(first_item, first_is_discount, first_is_core, first_is_freight),
+        'amount': '',
         'billable': '',
         'customer_project': customer,
         'tax_rate': '',
@@ -154,6 +225,11 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     # Write additional line items (rows 2+)
     for item in line_items[1:]:
+        is_freight = bool(item.get('is_freight'))
+        is_discount = _is_discount(item)
+        is_core = _is_core(item)
+        is_ere = _is_ere(item)
+        category = FREIGHT_CATEGORY if is_freight else PURCHASES_CATEGORY
         new_row = ws.max_row + 1
         row_data = {
             'bill_no': bill_no,
@@ -164,13 +240,13 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'due_date': '',
             'location': '',
             'memo': '',
-            'type': 'Item Details',
-            'category': 'Purchases',
-            'product_service': item.get('item_number', ''),
-            'qty': item.get('quantity', ''),
+            'type': '' if (is_freight or is_discount) else 'Item Details',
+            'category': category,
+            'product_service': _product_service_for_item(item, is_discount, is_core, is_ere, is_freight),
+            'qty': _normalize_qty_value(item.get('quantity', '')),
             'rate': item.get('unit_price', ''),
-            'description': item.get('description', ''),
-            'amount': item.get('amount', ''),
+            'description': _description_for_item(item, is_discount, is_core, is_freight),
+            'amount': '',
             'billable': '',
             'customer_project': '',
             'tax_rate': '',
@@ -186,46 +262,84 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
         rows_written += 1
 
-    # Always write shipping row (even if $0)
+    # Always write shipping row (even if $0), unless freight items already exist
+    has_freight_item = any(item.get('is_freight') for item in line_items)
+
     try:
         shipping_val = float(str(shipping_cost).replace(',', '').replace('$', ''))
     except (ValueError, TypeError):
         shipping_val = 0
 
     # Format shipping amount - show 0 if no shipping cost
-    shipping_amount = shipping_cost if shipping_val > 0 else '0'
+    shipping_rate = shipping_cost if shipping_val > 0 else '0'
+    shipping_desc = invoice_data.get('shipping_description', 'Shipping')
+    shipping_label = _normalize_shipping_label(shipping_desc)
 
-    new_row = ws.max_row + 1
-    row_data = {
-        'bill_no': bill_no,
-        'vendor': '',
-        'mailing_address': '',
-        'terms': '',
-        'bill_date': '',
-        'due_date': '',
-        'location': '',
-        'memo': '',
-        'type': '',
-        'category': 'Freight/Shipping',
-        'product_service': '',
-        'qty': '',
-        'rate': '',
-        'description': 'Shipping',
-        'amount': shipping_amount,
-        'billable': '',
-        'customer_project': '',
-        'tax_rate': '',
-        'class_field': '',
-    }
+    if (not has_freight_item) and (shipping_rate or shipping_desc):
+        new_row = ws.max_row + 1
+        row_data = {
+            'bill_no': bill_no,
+            'vendor': '',
+            'mailing_address': '',
+            'terms': '',
+            'bill_date': '',
+            'due_date': '',
+            'location': '',
+            'memo': '',
+            'type': '',
+            'category': FREIGHT_CATEGORY,
+            'product_service': shipping_label,
+            'qty': '',
+            'rate': shipping_rate,
+            'description': shipping_desc,
+            'amount': '',
+            'billable': '',
+            'customer_project': '',
+            'tax_rate': '',
+            'class_field': '',
+        }
 
-    for col_idx, (key, header) in enumerate(COLUMNS, 1):
-        value = row_data.get(key, '')
-        cell = ws.cell(row=new_row, column=col_idx, value=value)
-        # Apply alternating color per invoice (not per row)
-        if should_color:
-            cell.fill = ALT_ROW_FILL
+        for col_idx, (key, header) in enumerate(COLUMNS, 1):
+            value = row_data.get(key, '')
+            cell = ws.cell(row=new_row, column=col_idx, value=value)
+            # Apply alternating color per invoice (not per row)
+            if should_color:
+                cell.fill = ALT_ROW_FILL
 
-    rows_written += 1
+        rows_written += 1
+
+    # Add final total amount row (summary line)
+    if total_amount:
+        new_row = ws.max_row + 1
+        row_data = {
+            'bill_no': bill_no,
+            'vendor': '',
+            'mailing_address': '',
+            'terms': '',
+            'bill_date': '',
+            'due_date': '',
+            'location': '',
+            'memo': '',
+            'type': '',
+            'category': '',
+            'product_service': 'Total Amount',
+            'qty': '',
+            'rate': '',
+            'description': '',
+            'amount': total_amount,
+            'billable': '',
+            'customer_project': '',
+            'tax_rate': '',
+            'class_field': '',
+        }
+
+        for col_idx, (key, header) in enumerate(COLUMNS, 1):
+            value = row_data.get(key, '')
+            cell = ws.cell(row=new_row, column=col_idx, value=value)
+            if should_color:
+                cell.fill = ALT_ROW_FILL
+
+        rows_written += 1
 
     wb.save(filepath)
     cb(f"  Written {rows_written} row(s) to spreadsheet for invoice {bill_no}", "success")
@@ -283,11 +397,13 @@ def write_validation_result(filepath, row_num, is_valid, failed_fields):
 
     # Write validation result
     validation_cell = ws.cell(row=row_num, column=VALIDATION_COL)
-    validation_cell.value = 'Yes' if is_valid else 'No'
-
-    # Write failed fields
     failed_cell = ws.cell(row=row_num, column=FAILED_FIELDS_COL)
-    failed_cell.value = ', '.join(failed_fields) if failed_fields else ''
+    if is_valid is None:
+        validation_cell.value = ''
+        failed_cell.value = ''
+    else:
+        validation_cell.value = 'Yes' if is_valid else 'No'
+        failed_cell.value = ', '.join(failed_fields) if failed_fields else ''
 
     # Apply alternating color to validation cells (match existing row color)
     # Check if first cell in row has fill - need to copy the fill, not assign the proxy

@@ -43,13 +43,14 @@ def retry_with_backoff(func, max_retries=3, base_delay=2, status_callback=None):
 
 
 class GmailClient:
-    def __init__(self, base_dir, status_callback=None):
+    def __init__(self, base_dir, status_callback=None, data_dir=None, log_file=None, invoices_dir=None):
         self.base_dir = base_dir
+        self.data_dir = data_dir or base_dir
         self.status_callback = status_callback or (lambda msg, tag=None: None)
-        self.client_secret = os.path.join(base_dir, 'client_secret.json')
-        self.token_file = os.path.join(base_dir, 'token.pickle')
-        self.invoices_dir = os.path.join(base_dir, 'invoices')
-        self.log_file = os.path.join(base_dir, 'processed_log.json')
+        self.client_secret = os.path.join(self.data_dir, 'client_secret.json')
+        self.token_file = os.path.join(self.data_dir, 'token.pickle')
+        self.invoices_dir = invoices_dir or os.path.join(self.data_dir, 'invoices')
+        self.log_file = log_file or os.path.join(self.base_dir, 'processed_log.json')
         self.service = None
 
         os.makedirs(self.invoices_dir, exist_ok=True)
@@ -68,7 +69,7 @@ class GmailClient:
             else:
                 if not os.path.exists(self.client_secret):
                     raise FileNotFoundError(
-                        f"client_secret.json not found in {self.base_dir}. "
+                        f"client_secret.json not found in {self.data_dir}. "
                         "Please download OAuth credentials from Google Cloud Console."
                     )
                 self.status_callback("Opening browser for Gmail authentication...")

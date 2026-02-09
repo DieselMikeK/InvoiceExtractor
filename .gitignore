@@ -14,7 +14,7 @@ __pycache__/
 
 # Output files
 invoices/
-invoices_output.xlsx
+invoices_output*.xlsx
 processed_log.json
 
 # IDE

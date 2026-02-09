@@ -1,0 +1,13 @@
+﻿Bill No.,*Vendor,Mailing Address,Terms,*Bill Date,Due Date,Location,Memo,Type,Category/Account,Product/Service,Qty,Rate,Description,Amount,Billable,Customer/Project,Tax Rate,Class
+1001,Brittney Hughes,"2700 Coast Avenue
+Anywhere, CA 90001",Net 30,03/03/2020,04/03/2020,East,First bill of new contract.,Item Details,,Equipment,1,50,Equipment for new installation.,50,,,,Class A:Subclass B
+1001,,,,,,,,Category Details,Installation Fees,,,,Installation work.,20,,,,
+1002,Cass Hayden,"2700 Coast Avenue
+Anywhere, CA 90001",Net 60,04/04/2020,06/04/2020,West,Second bill of one-year term.,Item Details,,Equipment,1,50,Equipment for new installation.,50,,,,
+1002,,,,,,,,Category Details,Installation Fees,,,,Installation work.,40,,,,
+1002,,,,,,,,Item Details,,Supplies,2,5,Supplies for installation.,10,,,,
+1003,Brittney Hughes:Job A,"2700 Coast Avenue
+Anywhere, CA 90001",Net 30,05/05/2020,06/05/2020,East,One-time bill.,Item Details,,Equipment,2,50,Additional equipment.,100,TRUE,Chris Smith:Job A,,
+,,,,,,,,,,,,,,,,,,
+"All data in this file is for sample purposes only. If you use it as a template, please remove these instructional lines.",,,,,,,,,,,,,,,,,,
+* Required column,,,,,,,,,,,,,,,,,,
