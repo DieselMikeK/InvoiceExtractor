@@ -402,7 +402,9 @@ def validate_po_row(skunexus_data, invoice_row, vendor_aliases=None):
     failed_fields = []
 
     # Extract data from invoice row
-    invoice_sku = str(invoice_row.get('product_service', '')).strip()
+    invoice_sku = str(invoice_row.get('sku', '')).strip()
+    if not invoice_sku:
+        invoice_sku = str(invoice_row.get('product_service', '')).strip()
     invoice_qty = invoice_row.get('qty', '')
     invoice_price = invoice_row.get('rate', '')  # Unit price
     invoice_amount = invoice_row.get('amount', '')

@@ -66,15 +66,20 @@ FREIGHT_KEYWORDS = [
 VENDORS_CSV_PATH = os.path.join(os.path.dirname(__file__), 'vendors.csv')
 if not os.path.exists(VENDORS_CSV_PATH):
     try:
+        candidates = []
         if getattr(sys, 'frozen', False):
             exe_dir = os.path.dirname(sys.executable)
-            alt = os.path.join(exe_dir, 'vendors.csv')
-            if os.path.exists(alt):
-                VENDORS_CSV_PATH = alt
-        else:
-            cwd_alt = os.path.join(os.getcwd(), 'vendors.csv')
-            if os.path.exists(cwd_alt):
-                VENDORS_CSV_PATH = cwd_alt
+            candidates.append(os.path.join(exe_dir, 'vendors.csv'))
+        # Current working directory (e.g., running script from repo root)
+        candidates.append(os.path.join(os.getcwd(), 'vendors.csv'))
+        # Repo root when running from app/ as a script
+        parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        candidates.append(os.path.join(parent_dir, 'vendors.csv'))
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                VENDORS_CSV_PATH = candidate
+                break
     except Exception:
         pass
 
@@ -965,10 +970,10 @@ def identify_line_item_table(table):
     # Keywords that identify each column type
     ITEM_KEYWORDS = ['item', 'part', 'sku', 'product', 'item code', 'part number']
     QTY_KEYWORDS = ['qty', 'quantity', 'order qty', 'ship qty', 'invoiced qt', 'invoiced qty']
-    PRICE_KEYWORDS = ['unit price', 'price each', 'rate', 'unit']
+    PRICE_KEYWORDS = ['unit price', 'price each', 'rate']
     AMOUNT_KEYWORDS = ['amount', 'total', 'total price', 'ext.', 'ext', 'amount(net)']
     DESC_KEYWORDS = ['description', 'desc', 'product and description']
-    UNIT_KEYWORDS = ['u/m', 'um', 'qty um', 'price um']
+    UNIT_KEYWORDS = ['u/m', 'um', 'qty um', 'price um', 'unit', 'units']
 
     for row_idx, row in enumerate(table):
         if not row:
@@ -983,6 +988,7 @@ def identify_line_item_table(table):
         # Check if this row looks like a header (needs at least 2 recognized columns)
         col_map = {}
         recognized = 0
+        potential_unit_cols = []
 
         for col_idx, header in enumerate(headers):
             if not header:
@@ -1010,9 +1016,25 @@ def identify_line_item_table(table):
                     col_map['description'] = col_idx
                     recognized += 1
             elif any(kw in header for kw in UNIT_KEYWORDS):
-                if 'units' not in col_map:
+                if header in ('unit', 'units'):
+                    potential_unit_cols.append(col_idx)
+                elif 'units' not in col_map:
                     col_map['units'] = col_idx
                     recognized += 1
+
+        # Heuristic: if we saw a bare "Unit(s)" column, decide whether it's price or units.
+        # If a unit_price column was already found (e.g., "Rate" or "Unit Price"), treat
+        # "Unit(s)" as UOM. Otherwise, assume "Unit" is the unit price (II-style headers).
+        if potential_unit_cols:
+            if 'unit_price' not in col_map:
+                col_map['unit_price'] = potential_unit_cols[0]
+                recognized += 1
+                if len(potential_unit_cols) > 1 and 'units' not in col_map:
+                    col_map['units'] = potential_unit_cols[1]
+                    recognized += 1
+            elif 'units' not in col_map:
+                col_map['units'] = potential_unit_cols[0]
+                recognized += 1
 
         # Need at least 2 recognized columns to consider this a line-item table
         if recognized >= 2:

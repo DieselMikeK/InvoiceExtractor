@@ -26,7 +26,7 @@ from gmail_client import GmailClient
 from invoice_parser import parse_invoice, OCR_AVAILABLE
 from spreadsheet_writer import (
     write_invoice_to_spreadsheet, read_spreadsheet_rows,
-    write_validation_result, get_unique_po_numbers
+    write_validation_result, write_validation_results, get_unique_po_numbers
 )
 from skunexus_client import SkuNexusClient, validate_po_row
 
@@ -126,6 +126,13 @@ def _looks_like_sku(value):
     return len(normalized) >= 3
 
 
+def _get_row_sku(row):
+    sku = str(row.get('sku', '')).strip()
+    if sku:
+        return sku
+    return str(row.get('product_service', '')).strip()
+
+
 def get_base_dir():
     """Get the base directory - works for both script and PyInstaller exe."""
     if getattr(sys, 'frozen', False):
@@ -154,9 +161,8 @@ class InvoiceExtractorGUI:
         self.base_dir = get_base_dir()
         self.app_dir = os.path.join(self.base_dir, 'app')
         os.makedirs(self.app_dir, exist_ok=True)
-        self.invoices_dir = os.path.join(self.app_dir, 'invoices')
-        self.output_file = os.path.join(self.base_dir, 'invoices_output.xlsx')
         self.log_file = os.path.join(self.base_dir, 'processed_log.json')
+        self.output_file, self.invoices_dir = self._get_next_run_paths()
 
         self.is_running = False
         self.header_label = None
@@ -172,6 +178,42 @@ class InvoiceExtractorGUI:
         self.header_base_left = 0
 
         self.build_ui()
+
+    def _get_next_run_paths(self):
+        """Pick the next available output file and invoices folder (same suffix)."""
+        date_tag = f"{datetime.now().month}-{datetime.now().day}"
+        output_base = f"invoices_output_{date_tag}"
+        folder_base = f"invoices_{date_tag}"
+        ext = '.xlsx'
+
+        output_path = os.path.join(self.base_dir, f"{output_base}{ext}")
+        folder_path = os.path.join(self.app_dir, folder_base)
+        if (not os.path.exists(output_path)) and (not os.path.exists(folder_path)):
+            return output_path, folder_path
+
+        for i in range(2, 10000):
+            output_candidate = os.path.join(self.base_dir, f"{output_base}_{i}{ext}")
+            folder_candidate = os.path.join(self.app_dir, f"{folder_base}_{i}")
+            if (not os.path.exists(output_candidate)) and (not os.path.exists(folder_candidate)):
+                return output_candidate, folder_candidate
+
+        # Fallback: use timestamp if we somehow hit a huge count
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_path = os.path.join(self.base_dir, f"{output_base}_{stamp}{ext}")
+        folder_path = os.path.join(self.app_dir, f"{folder_base}_{stamp}")
+        return output_path, folder_path
+
+    def _get_output_files_for_validation(self):
+        """Return all output XLSX files in base_dir (sorted oldest to newest)."""
+        files = []
+        for name in os.listdir(self.base_dir):
+            if not name.lower().startswith('invoices_output'):
+                continue
+            if not name.lower().endswith('.xlsx'):
+                continue
+            files.append(os.path.join(self.base_dir, name))
+        files.sort(key=lambda p: os.path.getmtime(p))
+        return files
 
     def _set_window_icon(self):
         """Set the window/taskbar icon (Tk default is the leaf)."""
@@ -511,6 +553,11 @@ class InvoiceExtractorGUI:
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state=tk.DISABLED)
 
+        # Choose a fresh output file + invoices folder every run
+        self.output_file, self.invoices_dir = self._get_next_run_paths()
+        self.log(f"Output file: {os.path.basename(self.output_file)}", "info")
+        self.log(f"Invoices folder: {os.path.basename(self.invoices_dir)}", "info")
+
         self.set_progress(0, "Starting...")
 
         thread = threading.Thread(target=self.run_pipeline, daemon=True)
@@ -557,14 +604,24 @@ class InvoiceExtractorGUI:
 
             log_data = client.load_processed_log()
             processed_invoices = log_data.get("processed_invoices", {})
+            folder_name = os.path.basename(self.invoices_dir)
+            legacy_folder = folder_name.lower() == 'invoices'
+
+            def _invoice_key(filename):
+                rel_path = os.path.join('app', folder_name, filename)
+                return rel_path.replace('\\', '/')
 
             # Find all invoice files that haven't been parsed yet
             all_invoice_files = []
             if os.path.exists(self.invoices_dir):
                 for f in os.listdir(self.invoices_dir):
                     if f.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.tiff')):
-                        if f not in processed_invoices:
-                            all_invoice_files.append(f)
+                        key = _invoice_key(f)
+                        if key in processed_invoices:
+                            continue
+                        if legacy_folder and f in processed_invoices:
+                            continue
+                        all_invoice_files.append(f)
 
             if not all_invoice_files:
                 self.log("No new invoice files to parse.", "success")
@@ -603,13 +660,13 @@ class InvoiceExtractorGUI:
                             error_files.append(filename)
 
                         # Mark as processed regardless
-                        processed_invoices[filename] = datetime.now().isoformat()
+                        processed_invoices[_invoice_key(filename)] = datetime.now().isoformat()
 
                     except Exception as e:
                         self.log(f"  Failed to parse {filename}: {e}", "error")
                         error_count += 1
                         error_files.append(filename)
-                        processed_invoices[filename] = datetime.now().isoformat()
+                        processed_invoices[_invoice_key(filename)] = datetime.now().isoformat()
 
                 # Save updated processed log
                 log_data["processed_invoices"] = processed_invoices
@@ -662,9 +719,10 @@ class InvoiceExtractorGUI:
         if self.is_running:
             return
 
-        # Check if spreadsheet exists
-        if not os.path.exists(self.output_file):
-            self.log("ERROR: No spreadsheet found - run extraction first!", "error")
+        # Check if any output XLSX files exist
+        output_files = self._get_output_files_for_validation()
+        if not output_files:
+            self.log("ERROR: No output XLSX files found - run extraction first!", "error")
             return
 
         self.is_running = True
@@ -726,44 +784,45 @@ class InvoiceExtractorGUI:
                 self.finish_validation("Stopped by user.")
                 return
 
-            # Read all rows from spreadsheet
-            self.set_progress(10, "Reading spreadsheet...")
-            rows = read_spreadsheet_rows(self.output_file)
-
-            vendor_aliases = load_vendor_aliases(self.base_dir)
-
-            if not rows:
-                self.log("No data found in spreadsheet.", "warning")
+            # Collect output files
+            self.set_progress(10, "Reading output files...")
+            output_files = self._get_output_files_for_validation()
+            if not output_files:
+                self.log("No output XLSX files found.", "warning")
                 self.finish_validation("Validation complete - no data to validate")
                 return
 
-            self.log(f"Found {len(rows)} rows in spreadsheet")
+            vendor_aliases = load_vendor_aliases(self.base_dir)
 
-            # Map Bill No. -> Memo (PO) so we can validate item rows that omit Memo
-            memo_by_bill = {}
-            for row in rows:
-                bill_no = str(row.get('bill_no', '')).strip()
-                memo = str(row.get('memo', '')).strip()
-                if bill_no and memo:
-                    memo_by_bill[bill_no] = memo
+            files_info = []
+            total_rows = 0
+            for filepath in output_files:
+                rows = read_spreadsheet_rows(filepath)
+                if rows:
+                    files_info.append((filepath, rows))
+                    total_rows += len(rows)
 
-            # Group rows by PO number (collect vendor/SKU hints)
-            po_groups = {}
-            for row in rows:
-                memo = row.get('memo', '')
-                if not memo:
-                    bill_no = str(row.get('bill_no', '')).strip()
-                    memo = memo_by_bill.get(bill_no, '')
-                if not memo:
-                    continue
-                group = po_groups.setdefault(memo, {'rows': [], 'vendors': [], 'skus': []})
-                group['rows'].append(row)
-                vendor = str(row.get('vendor', '')).strip()
-                if vendor:
-                    group['vendors'].append(vendor)
-                sku = str(row.get('product_service', '')).strip()
-                if sku:
-                    group['skus'].append(sku)
+            if total_rows == 0:
+                self.log("No data found in output XLSX files.", "warning")
+                self.finish_validation("Validation complete - no data to validate")
+                return
+
+            self.log(f"Found {len(files_info)} output file(s) to validate")
+
+            if not self.is_running:
+                self.finish_validation("Stopped by user.")
+                return
+
+            # Validate rows across all files
+            validated_count = 0
+            passed_count = 0
+            failed_count = 0
+            not_found_count = 0
+            skipped_count = 0
+            already_validated_count = 0
+            po_cache = {}  # Cache SkuNexus data by PO number
+
+            processed_rows = 0
 
             def _pick_vendor(vendors):
                 if not vendors:
@@ -773,94 +832,128 @@ class InvoiceExtractorGUI:
                     counts[v] = counts.get(v, 0) + 1
                 return max(counts, key=counts.get)
 
-            self.log(f"Found {len(po_groups)} unique PO numbers to validate")
-
-            if not self.is_running:
-                self.finish_validation("Stopped by user.")
-                return
-
-            # Validate each PO
-            validated_count = 0
-            passed_count = 0
-            failed_count = 0
-            not_found_count = 0
-            po_cache = {}  # Cache SkuNexus data by PO number
-
-            total_rows = len(rows)
-            for i, row in enumerate(rows):
+            for filepath, rows in files_info:
                 if not self.is_running:
                     self.finish_validation("Stopped by user.")
                     return
 
-                progress = 15 + (80 * (i + 1) / total_rows)
-                self.set_progress(progress, f"Validating row {i + 1}/{total_rows}...")
+                basename = os.path.basename(filepath)
+                self.log("")
+                self.log(f"--- Validating {basename} ---", "info")
 
-                row_num = row['_row_num']
-                memo = row.get('memo', '')
-                if not memo:
+                # Map Bill No. -> Memo (PO) so we can validate item rows that omit Memo
+                memo_by_bill = {}
+                for row in rows:
                     bill_no = str(row.get('bill_no', '')).strip()
-                    memo = memo_by_bill.get(bill_no, '')
-                category = row.get('category', '')
+                    memo = str(row.get('memo', '')).strip()
+                    if bill_no and memo:
+                        memo_by_bill[bill_no] = memo
 
-                # Skip rows without PO number
-                if not memo:
-                    write_validation_result(self.output_file, row_num, None, [])
-                    continue
+                # Group rows by PO number (collect vendor/SKU hints)
+                po_groups = {}
+                for row in rows:
+                    memo = row.get('memo', '')
+                    if not memo:
+                        bill_no = str(row.get('bill_no', '')).strip()
+                        memo = memo_by_bill.get(bill_no, '')
+                    if not memo:
+                        continue
+                    group = po_groups.setdefault(memo, {'rows': [], 'vendors': [], 'skus': []})
+                    group['rows'].append(row)
+                    vendor = str(row.get('vendor', '')).strip()
+                    if vendor:
+                        group['vendors'].append(vendor)
+                    sku = _get_row_sku(row)
+                    if sku:
+                        group['skus'].append(sku)
 
-                # Only validate SKU rows (Category/Account = Purchases)
-                if category != 'Purchases':
-                    write_validation_result(self.output_file, row_num, None, [])
-                    continue
+                updates = {}
+                for row in rows:
+                    if not self.is_running:
+                        self.finish_validation("Stopped by user.")
+                        return
 
-                product_service = str(row.get('product_service', '')).strip()
-                if not _looks_like_sku(product_service):
-                    write_validation_result(self.output_file, row_num, None, [])
-                    continue
+                    processed_rows += 1
+                    progress = 15 + (80 * (processed_rows / total_rows))
+                    self.set_progress(progress, f"Validating row {processed_rows}/{total_rows}...")
 
-                # Get SkuNexus data (from cache or fetch)
-                if memo not in po_cache:
-                    # Extract PO number without "PO" prefix
-                    po_number = memo[2:] if memo.upper().startswith('PO') else memo
+                    row_num = row['_row_num']
 
-                    self.log(f"Fetching PO {po_number} from SkuNexus...")
-                    group = po_groups.get(memo, {})
-                    vendor_hint = _pick_vendor(group.get('vendors', []))
-                    sku_hints = group.get('skus', [])
-                    sn_data, error = client.get_best_po_with_line_items(
-                        po_number,
-                        invoice_vendor=vendor_hint,
-                        invoice_skus=sku_hints,
-                        vendor_aliases=vendor_aliases
-                    )
+                    existing_validation = str(row.get('skunexus_validation', '')).strip()
+                    if existing_validation:
+                        already_validated_count += 1
+                        continue
 
-                    if error:
-                        self.log(f"  Could not find PO {po_number}: {error}", "warning")
-                        po_cache[memo] = None
-                    else:
-                        po_cache[memo] = sn_data
-                        self.log(f"  Found PO with {len(sn_data.get('lineItems', {}).get('rows', []))} line items")
+                    memo = row.get('memo', '')
+                    if not memo:
+                        bill_no = str(row.get('bill_no', '')).strip()
+                        memo = memo_by_bill.get(bill_no, '')
+                    category = row.get('category', '')
 
-                sn_data = po_cache.get(memo)
+                    # Skip rows without PO number
+                    if not memo:
+                        skipped_count += 1
+                        continue
 
-                if sn_data is None:
-                    # PO not found in SkuNexus
-                    write_validation_result(self.output_file, row_num, False, ['PO not found in SkuNexus'])
+                    # Only validate SKU rows (Category/Account = Purchases)
+                    if category != 'Purchases':
+                        skipped_count += 1
+                        continue
+
+                    sku_value = _get_row_sku(row)
+                    if not _looks_like_sku(sku_value):
+                        skipped_count += 1
+                        continue
+
+                    # Get SkuNexus data (from cache or fetch)
+                    if memo not in po_cache:
+                        # Extract PO number without "PO" prefix
+                        po_number = memo[2:] if memo.upper().startswith('PO') else memo
+
+                        self.log(f"Fetching PO {po_number} from SkuNexus...")
+                        group = po_groups.get(memo, {})
+                        vendor_hint = _pick_vendor(group.get('vendors', []))
+                        sku_hints = group.get('skus', [])
+                        sn_data, error = client.get_best_po_with_line_items(
+                            po_number,
+                            invoice_vendor=vendor_hint,
+                            invoice_skus=sku_hints,
+                            vendor_aliases=vendor_aliases
+                        )
+
+                        if error:
+                            self.log(f"  Could not find PO {po_number}: {error}", "warning")
+                            po_cache[memo] = None
+                        else:
+                            po_cache[memo] = sn_data
+                            self.log(f"  Found PO with {len(sn_data.get('lineItems', {}).get('rows', []))} line items")
+
+                    sn_data = po_cache.get(memo)
+
+                    if sn_data is None:
+                        # PO not found in SkuNexus
+                        updates[row_num] = (False, ['PO not found in SkuNexus'])
+                        validated_count += 1
+                        not_found_count += 1
+                        continue
+
+                    # Validate this row against SkuNexus data
+                    is_valid, failed_fields = validate_po_row(sn_data, row, vendor_aliases)
+                    updates[row_num] = (is_valid, failed_fields)
                     validated_count += 1
-                    not_found_count += 1
-                    continue
 
-                # Validate this row against SkuNexus data
-                is_valid, failed_fields = validate_po_row(sn_data, row, vendor_aliases)
+                    if is_valid:
+                        passed_count += 1
+                    else:
+                        failed_count += 1
+                        sku = _get_row_sku(row) or 'N/A'
+                        self.log(f"  Row {row_num} (SKU: {sku}) - FAILED: {', '.join(failed_fields)}", "warning")
 
-                write_validation_result(self.output_file, row_num, is_valid, failed_fields)
-                validated_count += 1
-
-                if is_valid:
-                    passed_count += 1
+                if updates:
+                    write_validation_results(filepath, updates)
+                    self.log(f"Updated {len(updates)} row(s) in {basename}", "success")
                 else:
-                    failed_count += 1
-                    sku = row.get('product_service', 'N/A')
-                    self.log(f"  Row {row_num} (SKU: {sku}) - FAILED: {', '.join(failed_fields)}", "warning")
+                    self.log(f"No rows needed validation in {basename}", "success")
 
             # Summary
             self.log("")
@@ -871,6 +964,10 @@ class InvoiceExtractorGUI:
                 self.log(f"Failed: {failed_count}", "error")
             if not_found_count:
                 self.log(f"POs not found: {not_found_count}", "warning")
+            if already_validated_count:
+                self.log(f"Already validated rows skipped: {already_validated_count}")
+            if skipped_count:
+                self.log(f"Non-SKU/Non-PO rows skipped: {skipped_count}")
 
             self.finish_validation("Validation complete!")
 

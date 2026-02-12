@@ -1,4 +1,5 @@
 """Spreadsheet writer: writes parsed invoice data to QuickBooks-compatible CSV/Excel format."""
+import csv
 import os
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
@@ -18,9 +19,10 @@ COLUMNS = [
     ('due_date', 'Due Date'),
     ('location', 'Location'),
     ('memo', 'Memo'),                   # PO number goes here
-    ('type', 'Type'),                   # "Item Details" for products, empty for fees
+    ('type', 'Type'),                   # Always "Category Details" for QuickBooks import
     ('category', 'Category/Account'),   # "Purchases" or "Freight and shipping costs"
     ('product_service', 'Product/Service'),
+    ('sku', 'SKU'),
     ('qty', 'Qty'),
     ('rate', 'Rate'),
     ('description', 'Description'),     # Product description
@@ -34,11 +36,26 @@ COLUMNS = [
 ]
 
 # Column indices for validation columns (1-indexed for openpyxl)
-VALIDATION_COL = 20  # Column T - SkuNexus Validation
-FAILED_FIELDS_COL = 21  # Column U - SkuNexus Failed Fields
+VALIDATION_COL = 21  # Column U - SkuNexus Validation
+FAILED_FIELDS_COL = 22  # Column V - SkuNexus Failed Fields
 
 PURCHASES_CATEGORY = 'Purchases'
 FREIGHT_CATEGORY = 'Freight and shipping costs'
+TYPE_CATEGORY = 'Category Details'
+TYPE_ITEM = 'Item Details'
+
+
+def _is_csv(filepath):
+    return str(filepath).lower().endswith('.csv')
+
+
+def _get_csv_writer(filepath):
+    file_exists = os.path.exists(filepath) and os.path.getsize(filepath) > 0
+    csv_file = open(filepath, 'a', newline='', encoding='utf-8')
+    writer = csv.writer(csv_file)
+    if not file_exists:
+        writer.writerow([header for _, header in COLUMNS])
+    return csv_file, writer
 
 
 def get_or_create_workbook(filepath):
@@ -58,9 +75,9 @@ def get_or_create_workbook(filepath):
         widths = {
             'A': 12, 'B': 12, 'C': 25, 'D': 10, 'E': 12,
             'F': 12, 'G': 12, 'H': 15, 'I': 14, 'J': 18,
-            'K': 15, 'L': 6, 'M': 10, 'N': 40, 'O': 12,
-            'P': 10, 'Q': 18, 'R': 10, 'S': 12,
-            'T': 18, 'U': 40,  # Validation columns
+            'K': 18, 'L': 15, 'M': 6, 'N': 10, 'O': 40, 'P': 12,
+            'Q': 10, 'R': 18, 'S': 10, 'T': 12,
+            'U': 18, 'V': 40,  # Validation columns
         }
         for col_letter, width in widths.items():
             ws.column_dimensions[col_letter].width = width
@@ -96,12 +113,21 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     """
     cb = status_callback or (lambda msg, tag=None: None)
 
-    wb, ws = get_or_create_workbook(filepath)
+    is_csv = _is_csv(filepath)
+    wb = None
+    ws = None
+    csv_file = None
+    csv_writer = None
+    should_color = False
 
-    # Count existing invoices to determine if this invoice should be colored
-    # Even-indexed invoices (0, 2, 4...) get no color, odd-indexed (1, 3, 5...) get gray
-    invoice_index = count_unique_invoices(ws)
-    should_color = (invoice_index % 2 == 1)
+    if is_csv:
+        csv_file, csv_writer = _get_csv_writer(filepath)
+    else:
+        wb, ws = get_or_create_workbook(filepath)
+        # Count existing invoices to determine if this invoice should be colored
+        # Even-indexed invoices (0, 2, 4...) get no color, odd-indexed (1, 3, 5...) get gray
+        invoice_index = count_unique_invoices(ws)
+        should_color = (invoice_index % 2 == 1)
 
     bill_no = invoice_data.get('invoice_number', '')
     vendor = invoice_data.get('vendor', '')
@@ -118,8 +144,21 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     rows_written = 0
 
+    def _write_row(row_data):
+        nonlocal rows_written
+        if is_csv:
+            csv_writer.writerow([row_data.get(key, '') for key, _ in COLUMNS])
+        else:
+            new_row = ws.max_row + 1
+            for col_idx, (key, header) in enumerate(COLUMNS, 1):
+                value = row_data.get(key, '')
+                cell = ws.cell(row=new_row, column=col_idx, value=value)
+                # Apply alternating color per invoice (not per row)
+                if should_color:
+                    cell.fill = ALT_ROW_FILL
+        rows_written += 1
+
     # Write first row with full invoice header + first line item (if any)
-    new_row = ws.max_row + 1
 
     first_item = line_items[0] if line_items else {}
 
@@ -176,7 +215,9 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             return 'E.R.E.'
         if is_freight:
             return _normalize_shipping_label(item.get('description') or item.get('item_number'))
-        return item.get('item_number', '')
+        return 'Inventory Item (Sellable Item)'
+    def _sku_for_item(item):
+        return str(item.get('item_number', '')).strip()
     def _description_for_item(item, is_discount, is_core, is_freight):
         if is_core:
             return _core_description(item)
@@ -192,6 +233,13 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     first_is_core = _is_core(first_item)
     first_is_ere = _is_ere(first_item)
     first_category = FREIGHT_CATEGORY if first_is_freight else PURCHASES_CATEGORY
+    first_type = TYPE_ITEM if first_item else TYPE_CATEGORY
+    if first_item:
+        first_product_service = _product_service_for_item(first_item, first_is_discount, first_is_core, first_is_ere, first_is_freight)
+        first_sku = _sku_for_item(first_item)
+    else:
+        first_product_service = ''
+        first_sku = ''
     row_data = {
         'bill_no': bill_no,
         'vendor': vendor,
@@ -201,9 +249,10 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         'due_date': due_date,
         'location': '',
         'memo': memo,
-        'type': '' if (first_is_freight or first_is_discount) else ('Item Details' if first_item else ''),
+        'type': first_type,
         'category': first_category if first_item else '',
-        'product_service': _product_service_for_item(first_item, first_is_discount, first_is_core, first_is_ere, first_is_freight),
+        'product_service': first_product_service,
+        'sku': first_sku,
         'qty': _normalize_qty_value(first_item.get('quantity', '')),
         'rate': first_item.get('unit_price', ''),
         'description': _description_for_item(first_item, first_is_discount, first_is_core, first_is_freight),
@@ -214,14 +263,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         'class_field': '',
     }
 
-    for col_idx, (key, header) in enumerate(COLUMNS, 1):
-        value = row_data.get(key, '')
-        cell = ws.cell(row=new_row, column=col_idx, value=value)
-        # Apply alternating color per invoice (not per row)
-        if should_color:
-            cell.fill = ALT_ROW_FILL
-
-    rows_written += 1
+    _write_row(row_data)
 
     # Write additional line items (rows 2+)
     for item in line_items[1:]:
@@ -230,7 +272,6 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         is_core = _is_core(item)
         is_ere = _is_ere(item)
         category = FREIGHT_CATEGORY if is_freight else PURCHASES_CATEGORY
-        new_row = ws.max_row + 1
         row_data = {
             'bill_no': bill_no,
             'vendor': '',
@@ -240,9 +281,10 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'due_date': '',
             'location': '',
             'memo': '',
-            'type': '' if (is_freight or is_discount) else 'Item Details',
+            'type': TYPE_ITEM,
             'category': category,
             'product_service': _product_service_for_item(item, is_discount, is_core, is_ere, is_freight),
+            'sku': _sku_for_item(item),
             'qty': _normalize_qty_value(item.get('quantity', '')),
             'rate': item.get('unit_price', ''),
             'description': _description_for_item(item, is_discount, is_core, is_freight),
@@ -253,14 +295,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'class_field': '',
         }
 
-        for col_idx, (key, header) in enumerate(COLUMNS, 1):
-            value = row_data.get(key, '')
-            cell = ws.cell(row=new_row, column=col_idx, value=value)
-            # Apply alternating color per invoice (not per row)
-            if should_color:
-                cell.fill = ALT_ROW_FILL
-
-        rows_written += 1
+        _write_row(row_data)
 
     # Always write shipping row (even if $0), unless freight items already exist
     has_freight_item = any(item.get('is_freight') for item in line_items)
@@ -276,7 +311,6 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     shipping_label = _normalize_shipping_label(shipping_desc)
 
     if (not has_freight_item) and (shipping_rate or shipping_desc):
-        new_row = ws.max_row + 1
         row_data = {
             'bill_no': bill_no,
             'vendor': '',
@@ -286,9 +320,10 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'due_date': '',
             'location': '',
             'memo': '',
-            'type': '',
+            'type': TYPE_CATEGORY,
             'category': FREIGHT_CATEGORY,
             'product_service': shipping_label,
+            'sku': '',
             'qty': '',
             'rate': shipping_rate,
             'description': shipping_desc,
@@ -299,18 +334,10 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'class_field': '',
         }
 
-        for col_idx, (key, header) in enumerate(COLUMNS, 1):
-            value = row_data.get(key, '')
-            cell = ws.cell(row=new_row, column=col_idx, value=value)
-            # Apply alternating color per invoice (not per row)
-            if should_color:
-                cell.fill = ALT_ROW_FILL
-
-        rows_written += 1
+        _write_row(row_data)
 
     # Add final total amount row (summary line)
     if total_amount:
-        new_row = ws.max_row + 1
         row_data = {
             'bill_no': bill_no,
             'vendor': '',
@@ -320,9 +347,10 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'due_date': '',
             'location': '',
             'memo': '',
-            'type': '',
+            'type': TYPE_CATEGORY,
             'category': '',
             'product_service': 'Total Amount',
+            'sku': '',
             'qty': '',
             'rate': '',
             'description': '',
@@ -333,15 +361,13 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'class_field': '',
         }
 
-        for col_idx, (key, header) in enumerate(COLUMNS, 1):
-            value = row_data.get(key, '')
-            cell = ws.cell(row=new_row, column=col_idx, value=value)
-            if should_color:
-                cell.fill = ALT_ROW_FILL
+        _write_row(row_data)
 
-        rows_written += 1
-
-    wb.save(filepath)
+    if is_csv:
+        if csv_file:
+            csv_file.close()
+    else:
+        wb.save(filepath)
     cb(f"  Written {rows_written} row(s) to spreadsheet for invoice {bill_no}", "success")
 
     return rows_written
@@ -362,6 +388,17 @@ def read_spreadsheet_rows(filepath):
     if not os.path.exists(filepath):
         return []
 
+    if _is_csv(filepath):
+        rows = []
+        with open(filepath, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for idx, row in enumerate(reader, start=2):  # Header is row 1
+                row_data = {'_row_num': idx}
+                for key, header in COLUMNS:
+                    row_data[key] = row.get(header, '') or ''
+                rows.append(row_data)
+        return rows
+
     wb = load_workbook(filepath)
     ws = wb.active
 
@@ -375,19 +412,8 @@ def read_spreadsheet_rows(filepath):
     return rows
 
 
-def write_validation_result(filepath, row_num, is_valid, failed_fields):
-    """Write validation result to a specific row.
-
-    Args:
-        filepath: Path to the spreadsheet
-        row_num: The row number to update (1-indexed, header is row 1)
-        is_valid: Boolean - True for Yes, False for No
-        failed_fields: List of field names that failed validation
-    """
-    wb = load_workbook(filepath)
-    ws = wb.active
-
-    # Ensure validation headers exist
+def _ensure_validation_headers(ws):
+    """Ensure validation header columns exist in the worksheet."""
     if ws.cell(row=1, column=VALIDATION_COL).value != 'SkuNexus Validation':
         ws.cell(row=1, column=VALIDATION_COL, value='SkuNexus Validation')
         ws.cell(row=1, column=VALIDATION_COL).font = ws.cell(row=1, column=VALIDATION_COL).font.copy(bold=True)
@@ -395,7 +421,9 @@ def write_validation_result(filepath, row_num, is_valid, failed_fields):
         ws.cell(row=1, column=FAILED_FIELDS_COL, value='SkuNexus Failed Fields')
         ws.cell(row=1, column=FAILED_FIELDS_COL).font = ws.cell(row=1, column=FAILED_FIELDS_COL).font.copy(bold=True)
 
-    # Write validation result
+
+def _apply_validation_to_ws(ws, row_num, is_valid, failed_fields):
+    """Apply validation values to a single row in an open worksheet."""
     validation_cell = ws.cell(row=row_num, column=VALIDATION_COL)
     failed_cell = ws.cell(row=row_num, column=FAILED_FIELDS_COL)
     if is_valid is None:
@@ -406,10 +434,8 @@ def write_validation_result(filepath, row_num, is_valid, failed_fields):
         failed_cell.value = ', '.join(failed_fields) if failed_fields else ''
 
     # Apply alternating color to validation cells (match existing row color)
-    # Check if first cell in row has fill - need to copy the fill, not assign the proxy
     first_cell = ws.cell(row=row_num, column=1)
     if first_cell.fill and first_cell.fill.patternType == 'solid':
-        # Create a new PatternFill with the same color
         row_fill = PatternFill(
             start_color=first_cell.fill.start_color.rgb,
             end_color=first_cell.fill.end_color.rgb,
@@ -418,7 +444,77 @@ def write_validation_result(filepath, row_num, is_valid, failed_fields):
         validation_cell.fill = row_fill
         failed_cell.fill = row_fill
 
+
+def _write_validation_results_csv(filepath, updates):
+    if not updates or not os.path.exists(filepath):
+        return
+
+    with open(filepath, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        headers = list(reader.fieldnames or [])
+        rows = list(reader)
+
+    if not headers:
+        headers = [header for _, header in COLUMNS]
+
+    for header in ('SkuNexus Validation', 'SkuNexus Failed Fields'):
+        if header not in headers:
+            headers.append(header)
+
+    for row_num, (is_valid, failed_fields) in updates.items():
+        idx = row_num - 2  # Convert 1-indexed row number (header is row 1)
+        if idx < 0 or idx >= len(rows):
+            continue
+        if is_valid is None:
+            validation_value = ''
+            failed_value = ''
+        else:
+            validation_value = 'Yes' if is_valid else 'No'
+            failed_value = ', '.join(failed_fields) if failed_fields else ''
+        rows[idx]['SkuNexus Validation'] = validation_value
+        rows[idx]['SkuNexus Failed Fields'] = failed_value
+
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({h: row.get(h, '') for h in headers})
+
+
+def _write_validation_results_xlsx(filepath, updates):
+    if not updates:
+        return
+    wb = load_workbook(filepath)
+    ws = wb.active
+    _ensure_validation_headers(ws)
+    for row_num, (is_valid, failed_fields) in updates.items():
+        _apply_validation_to_ws(ws, row_num, is_valid, failed_fields)
     wb.save(filepath)
+
+
+def write_validation_results(filepath, updates):
+    """Write multiple validation results in one pass.
+
+    Args:
+        filepath: Path to the spreadsheet
+        updates: dict {row_num: (is_valid, failed_fields)}
+    """
+    if _is_csv(filepath):
+        _write_validation_results_csv(filepath, updates)
+    else:
+        _write_validation_results_xlsx(filepath, updates)
+
+
+def write_validation_result(filepath, row_num, is_valid, failed_fields):
+    """Write validation result to a specific row.
+
+    Args:
+        filepath: Path to the spreadsheet
+        row_num: The row number to update (1-indexed, header is row 1)
+        is_valid: Boolean - True for Yes, False for No
+        failed_fields: List of field names that failed validation
+    """
+    write_validation_results(filepath, {row_num: (is_valid, failed_fields)})
 
 
 def get_unique_po_numbers(filepath):
