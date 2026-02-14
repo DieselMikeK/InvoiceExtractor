@@ -1,7 +1,6 @@
 """Gmail API client for fetching emails and downloading attachments."""
 import os
 import base64
-import json
 import pickle
 import time
 from datetime import datetime
@@ -43,14 +42,13 @@ def retry_with_backoff(func, max_retries=3, base_delay=2, status_callback=None):
 
 
 class GmailClient:
-    def __init__(self, base_dir, status_callback=None, data_dir=None, log_file=None, invoices_dir=None):
+    def __init__(self, base_dir, status_callback=None, data_dir=None, invoices_dir=None):
         self.base_dir = base_dir
         self.data_dir = data_dir or base_dir
         self.status_callback = status_callback or (lambda msg, tag=None: None)
         self.client_secret = os.path.join(self.data_dir, 'client_secret.json')
         self.token_file = os.path.join(self.data_dir, 'token.pickle')
         self.invoices_dir = invoices_dir or os.path.join(self.data_dir, 'invoices')
-        self.log_file = log_file or os.path.join(self.base_dir, 'processed_log.json')
         self.service = None
 
         os.makedirs(self.invoices_dir, exist_ok=True)
@@ -134,20 +132,8 @@ class GmailClient:
             status_callback=self.status_callback
         )
 
-    def load_processed_log(self):
-        """Load the tracking log of already-processed emails and invoices."""
-        if os.path.exists(self.log_file):
-            with open(self.log_file, 'r') as f:
-                return json.load(f)
-        return {"processed_emails": {}, "processed_invoices": {}}
-
-    def save_processed_log(self, log):
-        """Save the tracking log."""
-        with open(self.log_file, 'w') as f:
-            json.dump(log, f, indent=2)
-
-    def fetch_all_message_ids(self):
-        """Fetch all message IDs from the inbox."""
+    def fetch_all_message_ids(self, query=None):
+        """Fetch message IDs from Gmail, optionally filtered by a search query."""
         all_messages = []
         page_token = None
 
@@ -156,6 +142,8 @@ class GmailClient:
                 kwargs = {'userId': 'me', 'maxResults': 500}
                 if pt:
                     kwargs['pageToken'] = pt
+                if query:
+                    kwargs['q'] = query
                 return self.service.users().messages().list(**kwargs).execute()
 
             results = retry_with_backoff(
@@ -237,26 +225,26 @@ class GmailClient:
 
         return attachments
 
-    def fetch_and_download_new_attachments(self):
+    def fetch_and_download_new_attachments(self, query=None):
         """Main method: fetch all emails, download new attachments.
 
         Returns:
             tuple: (list of new filenames downloaded, total emails checked, total new emails)
         """
-        log = self.load_processed_log()
-        processed_emails = log.get("processed_emails", {})
-
         self.status_callback("Fetching email list...")
-        all_messages = self.fetch_all_message_ids()
+        all_messages = self.fetch_all_message_ids(query=query)
         total_emails = len(all_messages)
-        self.status_callback(f"Found {total_emails} total emails in account.")
+        if query:
+            self.status_callback(f"Found {total_emails} email(s) matching filter.")
+        else:
+            self.status_callback(f"Found {total_emails} total emails in account.")
 
-        # Filter out already-processed emails
-        new_messages = [m for m in all_messages if m['id'] not in processed_emails]
+        # Use filtered results directly (label filtering is handled via Gmail query)
+        new_messages = all_messages
         new_count = len(new_messages)
 
         if new_count == 0:
-            self.status_callback("No new emails to process.", "success")
+            self.status_callback("No emails to process.", "success")
             return [], total_emails, 0
 
         self.status_callback(f"Processing {new_count} new emails...")
@@ -305,8 +293,7 @@ class GmailClient:
                         )
                         downloaded_files.append(saved_name)
 
-                # Mark email as processed (local log + Gmail label)
-                processed_emails[msg_id] = datetime.now().isoformat()
+                # Mark email as processed via Gmail label
                 try:
                     self._add_label_to_message(msg_id, self.processed_label_id)
                 except Exception as label_err:
@@ -318,16 +305,11 @@ class GmailClient:
                 self.status_callback(
                     f"  Error processing email {msg_id}: {e}", "error"
                 )
-                # Still mark it processed to avoid retrying broken emails forever
-                processed_emails[msg_id] = datetime.now().isoformat()
+                # Best effort label to avoid retrying broken emails forever
                 try:
                     self._add_label_to_message(msg_id, self.processed_label_id)
                 except Exception:
                     pass  # Best effort
-
-        # Save updated log
-        log["processed_emails"] = processed_emails
-        self.save_processed_log(log)
 
         self.status_callback(
             f"Download complete: {len(downloaded_files)} attachments from "

@@ -6,6 +6,7 @@ from openpyxl.styles import PatternFill
 
 # Alternating row background color
 ALT_ROW_FILL = PatternFill(start_color="EAEAEA", end_color="EAEAEA", fill_type="solid")
+SB_DELIVERY_FEE_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 
 
 # QuickBooks Bill Import column definitions (matching Taylor's format)
@@ -31,13 +32,15 @@ COLUMNS = [
     ('customer_project', 'Customer/Project'),
     ('tax_rate', 'Tax Rate'),
     ('class_field', 'Class'),
+    ('duplicate_status', 'Duplicate Status'),
+    ('duplicate_reference', 'Duplicate Reference'),
     ('skunexus_validation', 'SkuNexus Validation'),  # Yes/No
     ('skunexus_failed_fields', 'SkuNexus Failed Fields'),  # Which fields failed
 ]
 
 # Column indices for validation columns (1-indexed for openpyxl)
-VALIDATION_COL = 21  # Column U - SkuNexus Validation
-FAILED_FIELDS_COL = 22  # Column V - SkuNexus Failed Fields
+VALIDATION_COL = 23  # Column W - SkuNexus Validation
+FAILED_FIELDS_COL = 24  # Column X - SkuNexus Failed Fields
 
 PURCHASES_CATEGORY = 'Purchases'
 FREIGHT_CATEGORY = 'Freight and shipping costs'
@@ -77,7 +80,8 @@ def get_or_create_workbook(filepath):
             'F': 12, 'G': 12, 'H': 15, 'I': 14, 'J': 18,
             'K': 18, 'L': 15, 'M': 6, 'N': 10, 'O': 40, 'P': 12,
             'Q': 10, 'R': 18, 'S': 10, 'T': 12,
-            'U': 18, 'V': 40,  # Validation columns
+            'U': 20, 'V': 40,  # Duplicate columns
+            'W': 18, 'X': 40,  # Validation columns
         }
         for col_letter, width in widths.items():
             ws.column_dimensions[col_letter].width = width
@@ -146,17 +150,22 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     def _write_row(row_data):
         nonlocal rows_written
+        row_num = None
+        row_fill = row_data.get('_row_fill')
+        if row_fill is None and should_color:
+            row_fill = ALT_ROW_FILL
         if is_csv:
             csv_writer.writerow([row_data.get(key, '') for key, _ in COLUMNS])
         else:
-            new_row = ws.max_row + 1
+            row_num = ws.max_row + 1
             for col_idx, (key, header) in enumerate(COLUMNS, 1):
                 value = row_data.get(key, '')
-                cell = ws.cell(row=new_row, column=col_idx, value=value)
+                cell = ws.cell(row=row_num, column=col_idx, value=value)
                 # Apply alternating color per invoice (not per row)
-                if should_color:
-                    cell.fill = ALT_ROW_FILL
+                if row_fill:
+                    cell.fill = row_fill
         rows_written += 1
+        return row_num
 
     # Write first row with full invoice header + first line item (if any)
 
@@ -262,8 +271,17 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         'tax_rate': '',
         'class_field': '',
     }
+    if first_item and first_item.get('sb_delivery_fee'):
+        row_data['_row_fill'] = SB_DELIVERY_FEE_FILL
 
-    _write_row(row_data)
+    first_row_num = _write_row(row_data)
+    source_path = invoice_data.get('source_path') or ''
+    if (not is_csv) and first_row_num and bill_no and source_path:
+        try:
+            link_cell = ws.cell(row=first_row_num, column=1)
+            link_cell.hyperlink = source_path
+        except Exception:
+            pass
 
     # Write additional line items (rows 2+)
     for item in line_items[1:]:
@@ -273,7 +291,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         is_ere = _is_ere(item)
         category = FREIGHT_CATEGORY if is_freight else PURCHASES_CATEGORY
         row_data = {
-            'bill_no': bill_no,
+            'bill_no': '',
             'vendor': '',
             'mailing_address': '',
             'terms': '',
@@ -294,6 +312,8 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'tax_rate': '',
             'class_field': '',
         }
+        if item.get('sb_delivery_fee'):
+            row_data['_row_fill'] = SB_DELIVERY_FEE_FILL
 
         _write_row(row_data)
 
@@ -312,7 +332,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     if (not has_freight_item) and (shipping_rate or shipping_desc):
         row_data = {
-            'bill_no': bill_no,
+            'bill_no': '',
             'vendor': '',
             'mailing_address': '',
             'terms': '',
@@ -339,7 +359,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     # Add final total amount row (summary line)
     if total_amount:
         row_data = {
-            'bill_no': bill_no,
+            'bill_no': '',
             'vendor': '',
             'mailing_address': '',
             'terms': '',

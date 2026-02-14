@@ -70,6 +70,8 @@ if not os.path.exists(VENDORS_CSV_PATH):
         if getattr(sys, 'frozen', False):
             exe_dir = os.path.dirname(sys.executable)
             candidates.append(os.path.join(exe_dir, 'vendors.csv'))
+            candidates.append(os.path.join(exe_dir, 'App', 'vendors.csv'))
+            candidates.append(os.path.join(exe_dir, 'app', 'vendors.csv'))
         # Current working directory (e.g., running script from repo root)
         candidates.append(os.path.join(os.getcwd(), 'vendors.csv'))
         # Repo root when running from app/ as a script
@@ -1097,6 +1099,28 @@ def _split_cell_lines(value):
     return [line.strip() for line in text.split('\n') if line.strip()]
 
 
+def _is_sb_vendor_name(name):
+    """Return True if vendor name looks like S&B."""
+    key = _normalize_vendor_key(name or '')
+    if key:
+        if key in {'sb', 'sbandb'} or 'sandb' in key:
+            return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    if canonical_key:
+        if canonical_key in {'sb', 'sbandb'} or 'sandb' in canonical_key:
+            return True
+    return False
+
+
+def _is_sb_delivery_fee(item):
+    """Match S&B delivery fee variants (Colorado/CO + Delivery Fee)."""
+    item_number = str(item.get('item_number', '')).strip()
+    desc = str(item.get('description', '')).strip()
+    text = f"{item_number} {desc}".lower()
+    return bool(re.search(r'\b(?:colorado|co)\b.*\bdelivery\s+fee\b', text))
+
+
 def _expand_multiline_row(row, col_map):
     """Expand a table row that contains multiple items separated by newlines."""
     def _lines_for(key):
@@ -1147,6 +1171,89 @@ def _expand_multiline_row(row, col_map):
         }
         items.append(mark_freight_item(item))
     return items
+
+
+def _expand_multiline_row_sb(row, col_map):
+    """S&B-specific: merge multiline item_number into one description when qty is single-line."""
+    def _lines_for(key):
+        idx = col_map.get(key)
+        if idx is None or idx >= len(row):
+            return []
+        return _split_cell_lines(row[idx])
+
+    item_lines = _lines_for('item_number')
+    qty_lines = _lines_for('quantity')
+    unit_lines = _lines_for('units')
+    price_lines = _lines_for('unit_price')
+    amount_lines = _lines_for('amount')
+    desc_lines = _lines_for('description')
+
+    def _all_alpha(lines):
+        return all(not re.search(r'\d', line) for line in lines)
+
+    if (
+        len(item_lines) > 1
+        and _all_alpha(item_lines)
+        and len(qty_lines) <= 1
+        and len(price_lines) <= 1
+        and len(amount_lines) <= 1
+    ):
+        desc_parts = []
+        if item_lines:
+            desc_parts.append(' '.join(item_lines))
+        if desc_lines:
+            desc_parts.append(' '.join(desc_lines))
+        description = ' '.join([p for p in desc_parts if p]).strip()
+        item = {
+            'item_number': '',
+            'quantity': _clean_cell(qty_lines[0]) if qty_lines else '',
+            'unit_price': _clean_price(price_lines[0]) if price_lines else '',
+            'amount': _clean_price(amount_lines[0]) if amount_lines else '',
+            'description': _clean_cell(description),
+            'units': _clean_cell(unit_lines[0]) if unit_lines else 'Each',
+        }
+        return [mark_freight_item(item)]
+
+    # If item_number has extra lines beyond qty/price/amount, merge extra item lines into
+    # the corresponding description rows (S&B specific behavior).
+    item_count = max(len(qty_lines), len(price_lines), len(amount_lines), 1)
+    if len(item_lines) > item_count:
+        # If we see a tail like "Retail", "Delivery Fee", push those onto the LAST item description.
+        extra_lines = item_lines[item_count:]
+        item_lines = item_lines[:item_count]
+        desc_lines = desc_lines or [''] * item_count
+        if len(desc_lines) < item_count:
+            desc_lines = desc_lines + ([''] * (item_count - len(desc_lines)))
+        tail_text = ' '.join(extra_lines).strip()
+        if tail_text:
+            last_idx = item_count - 1
+            last_item = item_lines[last_idx] if last_idx < len(item_lines) else ''
+            if last_item and not re.search(r'\d', last_item):
+                item_lines[last_idx] = (last_item + ' ' + tail_text).strip()
+            elif not last_item:
+                item_lines[last_idx] = tail_text
+            else:
+                desc_lines[last_idx] = (desc_lines[last_idx] + ' ' + tail_text).strip()
+            if last_idx > 0:
+                candidate = {'item_number': item_lines[last_idx], 'description': ''}
+                if _is_sb_delivery_fee(candidate) and desc_lines[last_idx]:
+                    desc_lines[last_idx - 1] = (desc_lines[last_idx - 1] + ' ' + desc_lines[last_idx]).strip()
+                    desc_lines[last_idx] = ''
+
+        items = []
+        for i in range(item_count):
+            item = {
+                'item_number': _clean_cell(item_lines[i]) if i < len(item_lines) else '',
+                'quantity': _clean_cell(qty_lines[i]) if i < len(qty_lines) else '',
+                'unit_price': _clean_price(price_lines[i]) if i < len(price_lines) else '',
+                'amount': _clean_price(amount_lines[i]) if i < len(amount_lines) else '',
+                'description': _clean_cell(desc_lines[i]) if i < len(desc_lines) else '',
+                'units': _clean_cell(unit_lines[i]) if i < len(unit_lines) else 'Each',
+            }
+            items.append(mark_freight_item(item))
+        return items
+
+    return _expand_multiline_row(row, col_map)
 
 
 def _row_has_multiline_values(row, col_map):
@@ -1235,7 +1342,7 @@ def extract_item_from_table_row(row, col_map):
     return mark_freight_item(item)
 
 
-def extract_items_from_tables(filepath):
+def extract_items_from_tables(filepath, sb_mode=False):
     """Extract line items from pdfplumber tables.
 
     This is the PRIMARY extraction method. pdfplumber can detect table
@@ -1256,6 +1363,11 @@ def extract_items_from_tables(filepath):
 
         items = []
         last_qty = ''
+        last_units = ''
+        last_price = ''
+        last_amount = ''
+        last_desc = ''
+        last_item_number = ''
         for row in table[header_row_idx + 1:]:
             if not row or all(c is None or str(c).strip() == '' for c in row):
                 continue
@@ -1263,11 +1375,31 @@ def extract_items_from_tables(filepath):
             combined_text = ' '.join(str(v) for v in row if v).lower()
             if any(word in combined_text for word in ['subtotal', 'total', 'tax', 'balance']):
                 continue
-            row_items = (
-                _expand_multiline_row(row, col_map)
-                if _row_has_multiline_values(row, col_map)
-                else [extract_item_from_table_row(row, col_map)]
-            )
+            row_items = []
+            if _row_has_multiline_values(row, col_map):
+                if sb_mode:
+                    row_items = _expand_multiline_row_sb(row, col_map)
+                else:
+                    row_items = _expand_multiline_row(row, col_map)
+            else:
+                item = extract_item_from_table_row(row, col_map)
+                # S&B: merge description-only continuation rows into previous item
+                if sb_mode:
+                    item_number = str(item.get('item_number', '')).strip()
+                    qty = str(item.get('quantity', '')).strip()
+                    unit_price = str(item.get('unit_price', '')).strip()
+                    amount = str(item.get('amount', '')).strip()
+                    desc = str(item.get('description', '')).strip()
+                    units = str(item.get('units', '')).strip()
+
+                    has_numbers = bool(re.search(r'\d', item_number + qty + unit_price + amount))
+                    if desc and not has_numbers and last_qty and (not qty) and (not unit_price) and (not amount):
+                        merged_desc = (last_desc + ' ' + desc).strip() if last_desc else desc
+                        if items:
+                            items[-1]['description'] = merged_desc
+                            last_desc = merged_desc
+                            continue
+                row_items = [item]
 
             for item in row_items:
                 # Skip if no item number and no amount (probably a summary row)
@@ -1282,6 +1414,12 @@ def extract_items_from_tables(filepath):
                         item['quantity'] = '1'
                 else:
                     last_qty = item.get('quantity')
+                # Track last values for S&B continuation merging
+                last_units = item.get('units') or last_units
+                last_price = item.get('unit_price') or last_price
+                last_amount = item.get('amount') or last_amount
+                last_desc = item.get('description') or last_desc
+                last_item_number = item.get('item_number') or last_item_number
 
                 # If unit price is missing but amount exists, use amount as rate (RH-style tables)
                 if not item.get('unit_price') and item.get('amount') and item.get('quantity') in ('', '1'):
@@ -1851,7 +1989,7 @@ def _extract_items_by_price_patterns(text):
     return items
 
 
-def extract_line_items(text, filepath=None):
+def extract_line_items(text, filepath=None, vendor_name=None):
     """Extract line items using table-first, text-fallback approach.
 
     Args:
@@ -1862,7 +2000,8 @@ def extract_line_items(text, filepath=None):
         list of dicts with item_number, quantity, units, description, unit_price, amount
     """
     # Step 1: Try pdfplumber table extraction (most reliable)
-    items = extract_items_from_tables(filepath)
+    sb_mode = _is_sb_vendor_name(vendor_name)
+    items = extract_items_from_tables(filepath, sb_mode=sb_mode)
 
     # Step 2: Fall back to text-based extraction
     if not items:
@@ -1870,14 +2009,16 @@ def extract_line_items(text, filepath=None):
 
     for item in items:
         item['quantity'] = _normalize_qty(item.get('quantity'))
+        if sb_mode and _is_sb_delivery_fee(item):
+            item['sb_delivery_fee'] = True
 
     return items
 
 
 # Keep the old function name as an alias for compatibility
-def extract_line_items_sb(text):
-    """Alias for backwards compatibility."""
-    return extract_items_from_text(text)
+def extract_line_items_sb(text, filepath=None):
+    """Alias for backwards compatibility (S&B-specific)."""
+    return extract_line_items(text, filepath=filepath, vendor_name='S&B')
 
 
 # ---------------------------------------------------------------------------
@@ -2201,7 +2342,7 @@ def parse_invoice_text(text, filepath=None):
         ])
 
     # --- Line Items ---
-    data['line_items'] = extract_line_items(text, filepath)
+    data['line_items'] = extract_line_items(text, filepath, vendor_name=data.get('vendor'))
     if data['line_items']:
         freight_items = [i for i in data['line_items'] if i.get('is_freight')]
         if freight_items and not data.get('shipping_description'):
