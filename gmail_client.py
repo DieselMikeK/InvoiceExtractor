@@ -4,6 +4,7 @@ import base64
 import pickle
 import time
 from datetime import datetime
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -12,6 +13,10 @@ from googleapiclient.errors import HttpError
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
 PROCESSED_LABEL_NAME = "InvoiceExtractor-Processed"
+
+
+class WrongAuthorizedAccountError(Exception):
+    """Raised when OAuth succeeds with a disallowed Gmail account."""
 
 
 def retry_with_backoff(func, max_retries=3, base_delay=2, status_callback=None):
@@ -42,29 +47,81 @@ def retry_with_backoff(func, max_retries=3, base_delay=2, status_callback=None):
 
 
 class GmailClient:
-    def __init__(self, base_dir, status_callback=None, data_dir=None, invoices_dir=None):
+    def __init__(
+        self,
+        base_dir,
+        status_callback=None,
+        data_dir=None,
+        invoices_dir=None,
+        expected_email=None
+    ):
         self.base_dir = base_dir
         self.data_dir = data_dir or base_dir
         self.status_callback = status_callback or (lambda msg, tag=None: None)
         self.client_secret = os.path.join(self.data_dir, 'client_secret.json')
         self.token_file = os.path.join(self.data_dir, 'token.pickle')
         self.invoices_dir = invoices_dir or os.path.join(self.data_dir, 'invoices')
+        self.expected_email = str(expected_email or '').strip().lower()
         self.service = None
 
         os.makedirs(self.invoices_dir, exist_ok=True)
 
+    def _clear_cached_token(self):
+        """Delete cached token file so OAuth can run fresh."""
+        if os.path.exists(self.token_file):
+            try:
+                os.remove(self.token_file)
+            except Exception as e:
+                self.status_callback(
+                    f"Warning: couldn't remove cached token file: {e}",
+                    "warning"
+                )
+
     def authenticate(self):
         """Authenticate with Gmail API, caching token for future runs."""
         creds = None
+        should_persist_token = False
         if os.path.exists(self.token_file):
-            with open(self.token_file, 'rb') as f:
-                creds = pickle.load(f)
+            try:
+                with open(self.token_file, 'rb') as f:
+                    creds = pickle.load(f)
+            except Exception:
+                self.status_callback(
+                    "Cached token file is unreadable; forcing re-authentication.",
+                    "warning"
+                )
+                self._clear_cached_token()
+                creds = None
 
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 self.status_callback("Refreshing authentication token...")
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                    should_persist_token = True
+                except RefreshError as e:
+                    # Common case: invalid_grant when refresh token was revoked or expired.
+                    self.status_callback(
+                        f"Refresh token is invalid/revoked ({e}); "
+                        "removing cached token and re-authenticating.",
+                        "warning"
+                    )
+                    self._clear_cached_token()
+                    creds = None
+                except Exception as e:
+                    err_text = str(e).lower()
+                    if 'invalid_grant' in err_text or 'expired or revoked' in err_text:
+                        self.status_callback(
+                            f"Refresh token is invalid/revoked ({e}); "
+                            "removing cached token and re-authenticating.",
+                            "warning"
+                        )
+                        self._clear_cached_token()
+                        creds = None
+                    else:
+                        raise
+
+            if not creds or not creds.valid:
                 if not os.path.exists(self.client_secret):
                     raise FileNotFoundError(
                         f"client_secret.json not found in {self.data_dir}. "
@@ -75,9 +132,7 @@ class GmailClient:
                     self.client_secret, SCOPES
                 )
                 creds = flow.run_local_server(port=0)
-
-            with open(self.token_file, 'wb') as f:
-                pickle.dump(creds, f)
+                should_persist_token = True
 
         self.service = build('gmail', 'v1', credentials=creds)
 
@@ -85,7 +140,27 @@ class GmailClient:
             lambda: self.service.users().getProfile(userId='me').execute(),
             status_callback=self.status_callback
         )
-        self.status_callback(f"Connected to: {profile['emailAddress']}", "success")
+        connected_email = str(profile.get('emailAddress', '')).strip()
+        if self.expected_email and connected_email.lower() != self.expected_email:
+            self.status_callback(
+                f"Connected account {connected_email or '(unknown)'} is not allowed.",
+                "error"
+            )
+            self.status_callback(
+                f"Please sign in as {self.expected_email}.",
+                "error"
+            )
+            self._clear_cached_token()
+            raise WrongAuthorizedAccountError(
+                f"Signed in as {connected_email or '(unknown)'}; "
+                f"expected {self.expected_email}."
+            )
+
+        if should_persist_token:
+            with open(self.token_file, 'wb') as f:
+                pickle.dump(creds, f)
+
+        self.status_callback(f"Connected to: {connected_email}", "success")
 
         # Ensure our processed label exists
         self.processed_label_id = self._get_or_create_label(PROCESSED_LABEL_NAME)

@@ -104,8 +104,8 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     Format matches QuickBooks Bill Import:
     - First row: full invoice info with first line item
-    - Additional rows: just Bill No., Type, Category, Description, Amount for each additional item
-    - Shipping row: Bill No., Category="Freight and shipping costs", Description="Shipping", Amount
+    - Additional rows: line items with repeated invoice identity fields
+    - Shipping row: invoice identity fields + shipping details
 
     Args:
         filepath: Path to the .xlsx file
@@ -142,6 +142,12 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     memo = invoice_data.get('po_number', '')
     customer = invoice_data.get('customer', '')
     total_amount = invoice_data.get('total', '')
+    shared_invoice_fields = {
+        'bill_no': bill_no,
+        'vendor': vendor,
+        'bill_date': bill_date,
+        'due_date': due_date,
+    }
 
     line_items = invoice_data.get('line_items', [])
     shipping_cost = invoice_data.get('shipping_cost', '')
@@ -291,12 +297,12 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         is_ere = _is_ere(item)
         category = FREIGHT_CATEGORY if is_freight else PURCHASES_CATEGORY
         row_data = {
-            'bill_no': '',
-            'vendor': '',
+            'bill_no': shared_invoice_fields['bill_no'],
+            'vendor': shared_invoice_fields['vendor'],
             'mailing_address': '',
             'terms': '',
-            'bill_date': '',
-            'due_date': '',
+            'bill_date': shared_invoice_fields['bill_date'],
+            'due_date': shared_invoice_fields['due_date'],
             'location': '',
             'memo': '',
             'type': TYPE_ITEM,
@@ -332,12 +338,12 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     if (not has_freight_item) and (shipping_rate or shipping_desc):
         row_data = {
-            'bill_no': '',
-            'vendor': '',
+            'bill_no': shared_invoice_fields['bill_no'],
+            'vendor': shared_invoice_fields['vendor'],
             'mailing_address': '',
             'terms': '',
-            'bill_date': '',
-            'due_date': '',
+            'bill_date': shared_invoice_fields['bill_date'],
+            'due_date': shared_invoice_fields['due_date'],
             'location': '',
             'memo': '',
             'type': TYPE_CATEGORY,
@@ -359,12 +365,12 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     # Add final total amount row (summary line)
     if total_amount:
         row_data = {
-            'bill_no': '',
-            'vendor': '',
+            'bill_no': shared_invoice_fields['bill_no'],
+            'vendor': shared_invoice_fields['vendor'],
             'mailing_address': '',
             'terms': '',
-            'bill_date': '',
-            'due_date': '',
+            'bill_date': shared_invoice_fields['bill_date'],
+            'due_date': shared_invoice_fields['due_date'],
             'location': '',
             'memo': '',
             'type': TYPE_CATEGORY,
@@ -509,7 +515,13 @@ def _write_validation_results_xlsx(filepath, updates):
     _ensure_validation_headers(ws)
     for row_num, (is_valid, failed_fields) in updates.items():
         _apply_validation_to_ws(ws, row_num, is_valid, failed_fields)
-    wb.save(filepath)
+    try:
+        wb.save(filepath)
+    except PermissionError as e:
+        raise PermissionError(
+            f"{filepath} is locked (likely open in Excel). "
+            "Close the file and run validation again."
+        ) from e
 
 
 def write_validation_results(filepath, updates):

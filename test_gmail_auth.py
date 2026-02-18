@@ -1,6 +1,7 @@
 """Minimal test to verify Gmail API credentials work."""
 import os
 import pickle
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -14,13 +15,40 @@ TOKEN_FILE = os.path.join(BASE_DIR, 'token.pickle')
 def authenticate():
     creds = None
     if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, 'rb') as f:
-            creds = pickle.load(f)
+        try:
+            with open(TOKEN_FILE, 'rb') as f:
+                creds = pickle.load(f)
+        except Exception:
+            print("Cached token is unreadable. Re-authenticating...")
+            try:
+                os.remove(TOKEN_FILE)
+            except Exception:
+                pass
+            creds = None
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except RefreshError as e:
+                print(f"Refresh token invalid/revoked ({e}). Re-authenticating...")
+                try:
+                    os.remove(TOKEN_FILE)
+                except Exception:
+                    pass
+                creds = None
+            except Exception as e:
+                err_text = str(e).lower()
+                if 'invalid_grant' in err_text or 'expired or revoked' in err_text:
+                    print(f"Refresh token invalid/revoked ({e}). Re-authenticating...")
+                    try:
+                        os.remove(TOKEN_FILE)
+                    except Exception:
+                        pass
+                    creds = None
+                else:
+                    raise
+        if not creds or not creds.valid:
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET, SCOPES)
             creds = flow.run_local_server(port=0)
         with open(TOKEN_FILE, 'wb') as f:

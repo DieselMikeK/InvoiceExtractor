@@ -31,7 +31,11 @@ try:
 except Exception:
     TKCALENDAR_AVAILABLE = False
 
-from gmail_client import GmailClient, PROCESSED_LABEL_NAME
+from gmail_client import (
+    GmailClient,
+    PROCESSED_LABEL_NAME,
+    WrongAuthorizedAccountError
+)
 from invoice_parser import parse_invoice, OCR_AVAILABLE
 from spreadsheet_writer import (
     COLUMNS, write_invoice_to_spreadsheet, read_spreadsheet_rows,
@@ -44,6 +48,7 @@ BATCH_ROW_LIMIT = 1000  # Max data rows per CSV batch (header not counted)
 BATCH_INVOICE_LIMIT = 100  # Max invoices per CSV batch
 BATCH_FOLDER_PREFIX = "Batch_"
 BATCHES_ROOT_NAME = "Batches"
+AUTHORIZED_GMAIL_ACCOUNT = "dppautoap@gmail.com"
 
 def _normalize_vendor_key(name):
     if not name:
@@ -1085,7 +1090,8 @@ class InvoiceExtractorGUI:
                 self.base_dir,
                 status_callback=self.log,
                 data_dir=self.required_dir,
-                invoices_dir=self.invoices_dir
+                invoices_dir=self.invoices_dir,
+                expected_email=AUTHORIZED_GMAIL_ACCOUNT
             )
             client.authenticate()
 
@@ -1243,6 +1249,13 @@ class InvoiceExtractorGUI:
         except FileNotFoundError as e:
             self.log(f"File not found: {e}", "error")
             self.finish("Failed - missing file.")
+        except WrongAuthorizedAccountError as e:
+            self.log(f"Authentication blocked: {e}", "error")
+            self.log(
+                f"Sign in with {AUTHORIZED_GMAIL_ACCOUNT} and try again.",
+                "warning"
+            )
+            self.finish("Failed - wrong Gmail account.")
         except Exception as e:
             self.log(f"Unexpected error: {e}", "error")
             self.finish("Failed with error.")
@@ -1489,6 +1502,7 @@ class InvoiceExtractorGUI:
             not_found_count = 0
             skipped_count = 0
             already_validated_count = 0
+            locked_files_count = 0
             po_cache = {}  # Cache SkuNexus data by PO number
 
             processed_rows = 0
@@ -1619,8 +1633,20 @@ class InvoiceExtractorGUI:
                         self.log(f"  Row {row_num} (SKU: {sku}) - FAILED: {', '.join(failed_fields)}", "warning")
 
                 if updates:
-                    write_validation_results(filepath, updates)
-                    self.log(f"Updated {len(updates)} row(s) in {basename}", "success")
+                    try:
+                        write_validation_results(filepath, updates)
+                        self.log(f"Updated {len(updates)} row(s) in {basename}", "success")
+                    except PermissionError as e:
+                        locked_files_count += 1
+                        self.log(
+                            f"Could not update {basename}: file is locked/open in Excel.",
+                            "error"
+                        )
+                        self.log(f"  {e}", "warning")
+                        self.log(
+                            "  Close the workbook and run Validate POs again.",
+                            "warning"
+                        )
                 else:
                     self.log(f"No rows needed validation in {basename}", "success")
 
@@ -1637,6 +1663,11 @@ class InvoiceExtractorGUI:
                 self.log(f"Already validated rows skipped: {already_validated_count}")
             if skipped_count:
                 self.log(f"Non-SKU/Non-PO rows skipped: {skipped_count}")
+            if locked_files_count:
+                self.log(
+                    f"Files skipped due to lock/open Excel window: {locked_files_count}",
+                    "warning"
+                )
 
             self.finish_validation("Validation complete!")
 
