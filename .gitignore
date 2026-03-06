@@ -3,6 +3,8 @@ client_secret.json
 token.pickle
 credentials.json
 skunexus_config.json
+shopify_config.json
+shopify_token.json
 
 # Build artifacts
 build/
@@ -16,6 +18,8 @@ __pycache__/
 invoices/
 invoices_output*.xlsx
 processed_log.json
+invoice_history.csv
+training/outputs/
 
 # IDE
 .vscode/

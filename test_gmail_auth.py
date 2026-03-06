@@ -8,8 +8,9 @@ from googleapiclient.discovery import build
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CLIENT_SECRET = os.path.join(BASE_DIR, 'client_secret.json')
-TOKEN_FILE = os.path.join(BASE_DIR, 'token.pickle')
+REQUIRED_DIR = os.path.join(BASE_DIR, 'required')
+CLIENT_SECRET = os.path.join(REQUIRED_DIR, 'client_secret.json')
+TOKEN_FILE = os.path.join(REQUIRED_DIR, 'token.pickle')
 
 
 def authenticate():

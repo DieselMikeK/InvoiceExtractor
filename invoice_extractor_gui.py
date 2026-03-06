@@ -42,13 +42,17 @@ from spreadsheet_writer import (
     write_validation_result, write_validation_results, get_unique_po_numbers
 )
 from skunexus_client import SkuNexusClient, validate_po_row
+from shopify_client import ShopifyClient
 
 # Batch export settings (easy to change)
-BATCH_ROW_LIMIT = 1000  # Max data rows per CSV batch (header not counted)
-BATCH_INVOICE_LIMIT = 100  # Max invoices per CSV batch
+# QuickBooks import appears to cap CSV files at ~100 total lines.
+# Keep each batch at 100 lines max including the header row.
+BATCH_TOTAL_LINE_LIMIT = 100
+BATCH_ROW_LIMIT = BATCH_TOTAL_LINE_LIMIT - 1  # Max data rows per CSV batch
 BATCH_FOLDER_PREFIX = "Batch_"
 BATCHES_ROOT_NAME = "Batches"
 AUTHORIZED_GMAIL_ACCOUNT = "dppautoap@gmail.com"
+SHOPIFY_CORE_RATE_TOLERANCE = 0.01
 
 def _normalize_vendor_key(name):
     if not name:
@@ -157,6 +161,63 @@ def _get_row_sku(row):
     return str(row.get('product_service', '')).strip()
 
 
+def _to_float_value(value):
+    if value is None:
+        return None
+    try:
+        text = str(value).strip().replace(',', '').replace('$', '')
+        if text == '':
+            return None
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_related_order_numbers(sn_data):
+    numbers = []
+    seen = set()
+    if not isinstance(sn_data, dict):
+        return numbers
+
+    related_rows = sn_data.get('allRelatedOrders') or []
+    if not related_rows:
+        one = sn_data.get('relatedOrder') or {}
+        if one:
+            related_rows = [one]
+
+    for row in related_rows:
+        label = str((row or {}).get('label', '')).strip()
+        if not label:
+            continue
+        digits = ''.join(ch for ch in label if ch.isdigit())
+        normalized = (digits.lstrip('0') or '0') if digits else label
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        numbers.append(normalized)
+
+    return numbers
+
+
+def _is_core_row(row):
+    row_type = str(row.get('type', '')).strip().lower()
+    if row_type != 'item details':
+        return False
+    category = str(row.get('category', '')).strip().lower()
+    if category != 'purchases':
+        return False
+
+    product_service = str(row.get('product_service', '')).strip().lower()
+    sku = str(row.get('sku', '')).strip().lower()
+    description = str(row.get('description', '')).strip().lower()
+
+    if product_service == 'core':
+        return True
+    if sku.startswith('core'):
+        return True
+    return bool(re.search(r'\bcore\b', f"{sku} {description}"))
+
+
 def get_base_dir():
     """Get the base directory - works for both script and PyInstaller exe."""
     if getattr(sys, 'frozen', False):
@@ -228,7 +289,14 @@ class InvoiceExtractorGUI:
 
         self.base_dir = get_base_dir()
         if getattr(sys, 'frozen', False):
-            self.app_dir = os.path.join(self.base_dir, 'App')
+            app_dir_candidates = (
+                os.path.join(self.base_dir, 'App'),
+                os.path.join(self.base_dir, 'app'),
+            )
+            self.app_dir = next(
+                (path for path in app_dir_candidates if os.path.isdir(path)),
+                app_dir_candidates[0]
+            )
         else:
             # Running from source inside App folder
             self.app_dir = self.base_dir
@@ -343,10 +411,13 @@ class InvoiceExtractorGUI:
     def _migrate_required_files(self):
         files = [
             'client_secret.json',
-            'token.pickle',
             'skunexus_config.json',
+            'shopify_config.json',
+            'shopify_token.json',
             'invoice_history.csv',
         ]
+        # Do not auto-migrate token.pickle. If a user deletes it, they expect
+        # the next run to force a fresh OAuth login.
         for name in files:
             dest = os.path.join(self.required_dir, name)
             if os.path.exists(dest):
@@ -400,129 +471,306 @@ class InvoiceExtractorGUI:
         except Exception as e:
             self.log(f"Warning: could not update invoice history ({e})", "warning")
 
-    def _apply_duplicate_flags(self, filepath, history_by_po):
+    def _apply_duplicate_flags(self, filepath, history_by_po, history_by_bill=None):
+        """Mark duplicates in output spreadsheet and return duplicate summary."""
         if not os.path.exists(filepath):
-            return
-        rows = read_spreadsheet_rows(filepath)
-        if not rows:
-            return
+            return {'duplicate_invoices': 0, 'duplicate_rows': 0}
+        if str(filepath).lower().endswith('.csv'):
+            return {'duplicate_invoices': 0, 'duplicate_rows': 0}
 
-        # Resolve memo (PO) for rows with blank memo by using first memo per bill
-        memo_by_bill = {}
-        for row in rows:
-            bill_no = str(row.get('bill_no', '')).strip()
-            memo = str(row.get('memo', '')).strip()
-            if bill_no and memo:
-                memo_by_bill[bill_no] = memo
+        history_by_po = history_by_po or {}
+        history_by_bill = history_by_bill or {}
 
-        # Track current bill per row and build bill->po mapping
-        bill_by_row = {}
-        bill_to_po = {}
-        first_row_by_bill = {}
-        bill_to_index = {}
-        invoice_index = -1
-        current_bill = ''
-        for row in rows:
-            row_num = row.get('_row_num')
-            bill_no = str(row.get('bill_no', '')).strip()
-            memo = str(row.get('memo', '')).strip()
+        wb = load_workbook(filepath)
+        ws = wb.active
+        if ws.max_row < 2:
+            return {'duplicate_invoices': 0, 'duplicate_rows': 0}
+
+        header_map = {}
+        for col in range(1, ws.max_column + 1):
+            header_val = ws.cell(row=1, column=col).value
+            if header_val is None:
+                continue
+            header_key = str(header_val).strip().lower()
+            if header_key and header_key not in header_map:
+                header_map[header_key] = col
+
+        col_keys = [key for key, _ in COLUMNS]
+
+        def _col_for(header_text, key_name):
+            header_key = str(header_text).strip().lower()
+            if header_key in header_map:
+                return header_map[header_key]
+            try:
+                return col_keys.index(key_name) + 1
+            except ValueError:
+                return None
+
+        dup_status_col = _col_for('Duplicate Status', 'duplicate_status')
+        dup_ref_col = _col_for('Duplicate Reference', 'duplicate_reference')
+        memo_col = _col_for('Memo', 'memo')
+        mailing_col = _col_for('Mailing Address', 'mailing_address')
+        terms_col = _col_for('Terms', 'terms')
+        customer_col = _col_for('Customer/Project', 'customer_project')
+
+        if not all([dup_status_col, dup_ref_col, memo_col, mailing_col, terms_col, customer_col]):
+            return {'duplicate_invoices': 0, 'duplicate_rows': 0}
+
+        # Build explicit invoice entries so duplicate Bill No. invoices remain separate.
+        entries = []
+        row_to_entry = {}
+        current_entry_idx = None
+        prev_bill = ''
+
+        for row_num in range(2, ws.max_row + 1):
+            has_any_value = False
+            for col in range(1, ws.max_column + 1):
+                val = ws.cell(row=row_num, column=col).value
+                if val is not None and str(val).strip():
+                    has_any_value = True
+                    break
+            if not has_any_value:
+                continue
+
+            bill_cell = ws.cell(row=row_num, column=1)
+            bill_no = str(bill_cell.value or '').strip()
+            memo = str(ws.cell(row=row_num, column=memo_col).value or '').strip()
+            mailing = str(ws.cell(row=row_num, column=mailing_col).value or '').strip()
+            terms = str(ws.cell(row=row_num, column=terms_col).value or '').strip()
+            customer = str(ws.cell(row=row_num, column=customer_col).value or '').strip()
+            has_link = bool(getattr(bill_cell, 'hyperlink', None))
+
+            # First row of an invoice always has at least one header-like marker.
+            start_marker = has_link or bool(memo) or bool(mailing) or bool(terms) or bool(customer)
+            bill_changed = bool(bill_no and prev_bill and bill_no != prev_bill)
+            starts_new = (current_entry_idx is None) or start_marker or bill_changed
+
+            if starts_new:
+                source_ref = ''
+                if has_link and getattr(bill_cell, 'hyperlink', None):
+                    try:
+                        source_ref = str(bill_cell.hyperlink.target or '').strip()
+                    except Exception:
+                        source_ref = ''
+                entries.append({
+                    'index': len(entries),
+                    'start_row': row_num,
+                    'bill_no': bill_no,
+                    'po': memo,
+                    'rows': [],
+                    'source_ref': source_ref,
+                })
+                current_entry_idx = len(entries) - 1
+
+            entry = entries[current_entry_idx]
+            if bill_no and not entry['bill_no']:
+                entry['bill_no'] = bill_no
+            if memo and not entry['po']:
+                entry['po'] = memo
+            if has_link and getattr(bill_cell, 'hyperlink', None) and not entry.get('source_ref'):
+                try:
+                    entry['source_ref'] = str(bill_cell.hyperlink.target or '').strip()
+                except Exception:
+                    pass
+            entry['rows'].append(row_num)
+            row_to_entry[row_num] = current_entry_idx
+
             if bill_no:
-                current_bill = bill_no
-                if current_bill not in bill_to_index:
-                    invoice_index += 1
-                    bill_to_index[current_bill] = invoice_index
-                if current_bill and current_bill not in first_row_by_bill:
-                    first_row_by_bill[current_bill] = row_num
-            if not memo and current_bill:
-                memo = memo_by_bill.get(current_bill, '')
-            if current_bill:
-                bill_by_row[row_num] = current_bill
-                if memo and current_bill not in bill_to_po:
-                    bill_to_po[current_bill] = memo
+                prev_bill = bill_no
 
-        # Build PO -> bills mapping for current file
-        po_to_bills = {}
-        for bill_no, po in bill_to_po.items():
-            if not po:
-                continue
-            po_to_bills.setdefault(po, []).append(bill_no)
+        if not entries:
+            return {'duplicate_invoices': 0, 'duplicate_rows': 0}
 
-        # Compute duplicate status per bill
-        status_by_bill = {}
-        ref_by_bill = {}
-        for bill_no, po in bill_to_po.items():
-            if not po:
-                continue
+        bill_to_entries = {}
+        po_to_entries = {}
+        for entry in entries:
+            bill_no = entry.get('bill_no', '')
+            po = entry.get('po', '')
+            if bill_no:
+                bill_to_entries.setdefault(bill_no, []).append(entry['index'])
+            if po:
+                po_to_entries.setdefault(po, []).append(entry['index'])
+
+        status_by_entry = {}
+        ref_by_entry = {}
+
+        def _short_source_label(path_value):
+            value = str(path_value or '').strip()
+            if not value:
+                return ''
+            value = value.replace('\\', '/')
+            base = os.path.basename(value)
+            return base or value
+
+        def _history_ref(hist_row):
+            src = _short_source_label(hist_row.get('source_file', ''))
+            date_val = str(hist_row.get('invoice_date', '')).strip()
+            if not date_val:
+                downloaded = str(hist_row.get('downloaded_at', '')).strip()
+                if downloaded:
+                    date_val = downloaded.split(' ')[0]
+            if src and date_val:
+                return f"{src} ({date_val})"
+            if src:
+                return src
+            if date_val:
+                return date_val
+            bill = str(hist_row.get('bill_no', '')).strip()
+            po_number = str(hist_row.get('po_number', '')).strip()
+            if bill and po_number:
+                return f"{bill} / {po_number}"
+            return bill or po_number or ''
+
+        for entry in entries:
+            idx = entry['index']
+            bill_no = entry.get('bill_no', '')
+            po = entry.get('po', '')
             status_parts = []
             ref_parts = []
-            bills_with_po = po_to_bills.get(po, [])
-            if len(bills_with_po) > 1:
-                status_parts.append("Duplicate PO (current run)")
-                others = [b for b in bills_with_po if b != bill_no]
-                if others:
-                    ref_parts.append("Current: " + ", ".join(sorted(others)))
-            history_entries = history_by_po.get(po, [])
-            if history_entries:
-                status_parts.append("Duplicate PO (history)")
+
+            same_bill_entries = bill_to_entries.get(bill_no, []) if bill_no else []
+            same_po_entries = po_to_entries.get(po, []) if po else []
+            same_invoice_entries = []
+            if bill_no and po:
+                same_invoice_entries = [
+                    other_idx for other_idx in same_bill_entries
+                    if other_idx in set(same_po_entries)
+                ]
+
+            if len(same_invoice_entries) > 1:
+                status_parts.append("Duplicate Invoice (current file)")
+                current_refs = []
+                seen = set()
+                for other_idx in same_invoice_entries:
+                    if other_idx == idx:
+                        continue
+                    other = entries[other_idx]
+                    ref = _short_source_label(other.get('source_ref')) or (
+                        (other.get('bill_no') or '') + (f" / {other.get('po')}" if other.get('po') else '')
+                    ).strip()
+                    if ref and ref not in seen:
+                        current_refs.append(ref)
+                        seen.add(ref)
+                if current_refs:
+                    ref_parts.append("Current file: " + ", ".join(current_refs[:5]))
+            else:
+                if len(same_bill_entries) > 1:
+                    status_parts.append("Duplicate Bill No. (current file)")
+                    current_refs = []
+                    seen = set()
+                    for other_idx in same_bill_entries:
+                        if other_idx == idx:
+                            continue
+                        other = entries[other_idx]
+                        ref = _short_source_label(other.get('source_ref')) or str(other.get('po') or '').strip()
+                        if ref and ref not in seen:
+                            current_refs.append(ref)
+                            seen.add(ref)
+                    if current_refs:
+                        ref_parts.append("Current Bill No.: " + ", ".join(current_refs[:5]))
+
+                if len(same_po_entries) > 1:
+                    status_parts.append("Duplicate PO (current file)")
+                    current_refs = []
+                    seen = set()
+                    for other_idx in same_po_entries:
+                        if other_idx == idx:
+                            continue
+                        other = entries[other_idx]
+                        ref = _short_source_label(other.get('source_ref')) or str(other.get('bill_no') or '').strip()
+                        if ref and ref not in seen:
+                            current_refs.append(ref)
+                            seen.add(ref)
+                    if current_refs:
+                        ref_parts.append("Current PO: " + ", ".join(current_refs[:5]))
+
+            history_po_entries = history_by_po.get(po, []) if po else []
+            history_bill_entries = history_by_bill.get(bill_no, []) if bill_no else []
+            history_same_invoice = []
+            if bill_no and po and history_bill_entries:
+                for hist in history_bill_entries:
+                    hist_po = str(hist.get('po_number', '')).strip()
+                    if hist_po and hist_po == po:
+                        history_same_invoice.append(hist)
+
+            if history_same_invoice:
+                status_parts.append("Duplicate Invoice (history)")
                 hist_refs = []
                 seen_refs = set()
-                for entry in history_entries:
-                    date_val = str(entry.get('invoice_date', '')).strip()
-                    if not date_val:
-                        downloaded = str(entry.get('downloaded_at', '')).strip()
-                        if downloaded:
-                            date_val = downloaded.split(' ')[0]
-                    ref = f"{po} - {date_val}" if date_val else po
+                for hist in history_same_invoice:
+                    ref = _history_ref(hist)
                     if ref and ref not in seen_refs:
                         hist_refs.append(ref)
                         seen_refs.add(ref)
                 if hist_refs:
                     ref_parts.append("History: " + ", ".join(hist_refs[:5]))
+            else:
+                if history_po_entries:
+                    status_parts.append("Duplicate PO (history)")
+                    hist_refs = []
+                    seen_refs = set()
+                    for hist in history_po_entries:
+                        ref = _history_ref(hist)
+                        if ref and ref not in seen_refs:
+                            hist_refs.append(ref)
+                            seen_refs.add(ref)
+                    if hist_refs:
+                        ref_parts.append("History PO: " + ", ".join(hist_refs[:5]))
+
+                if history_bill_entries:
+                    status_parts.append("Duplicate Bill No. (history)")
+                    hist_refs = []
+                    seen_refs = set()
+                    for hist in history_bill_entries:
+                        ref = _history_ref(hist)
+                        if ref and ref not in seen_refs:
+                            hist_refs.append(ref)
+                            seen_refs.add(ref)
+                    if hist_refs:
+                        ref_parts.append("History Bill No.: " + ", ".join(hist_refs[:5]))
+
             if status_parts:
-                status_by_bill[bill_no] = "; ".join(status_parts)
-                ref_by_bill[bill_no] = " | ".join(ref_parts)
+                unique_status = []
+                seen_status = set()
+                for part in status_parts:
+                    if part not in seen_status:
+                        unique_status.append(part)
+                        seen_status.add(part)
+                unique_refs = []
+                seen_refs = set()
+                for part in ref_parts:
+                    if part and part not in seen_refs:
+                        unique_refs.append(part)
+                        seen_refs.add(part)
+                status_by_entry[idx] = "; ".join(unique_status)
+                ref_by_entry[idx] = " | ".join(unique_refs)
 
-        if not status_by_bill:
-            return
-
-        # Update duplicate columns in spreadsheet
-        col_keys = [key for key, _ in COLUMNS]
-        try:
-            dup_status_col = col_keys.index('duplicate_status') + 1
-            dup_ref_col = col_keys.index('duplicate_reference') + 1
-        except ValueError:
-            return
-
-        wb = load_workbook(filepath)
-        ws = wb.active
-        dup_bills = set(status_by_bill.keys())
+        dup_entry_indices = set(status_by_entry.keys())
         dup_fill_light = PatternFill(start_color="A8A8A8", end_color="A8A8A8", fill_type='solid')
         dup_fill_dark = PatternFill(start_color="888888", end_color="888888", fill_type='solid')
 
         for row_num in range(2, ws.max_row + 1):
-            bill_no = ws.cell(row=row_num, column=1).value
-            bill_no = str(bill_no).strip() if bill_no else ''
-            if not bill_no:
-                bill_no = bill_by_row.get(row_num, '')
-            if not bill_no:
+            entry_idx = row_to_entry.get(row_num)
+            if entry_idx is None:
                 continue
-            is_first = first_row_by_bill.get(bill_no) == row_num
-            status = status_by_bill.get(bill_no)
+
+            entry = entries[entry_idx]
+            is_first = entry.get('start_row') == row_num
+            status = status_by_entry.get(entry_idx)
             if is_first and status:
                 ws.cell(row=row_num, column=dup_status_col, value=status)
-                ws.cell(row=row_num, column=dup_ref_col, value=ref_by_bill.get(bill_no, ''))
+                ws.cell(row=row_num, column=dup_ref_col, value=ref_by_entry.get(entry_idx, ''))
             else:
                 ws.cell(row=row_num, column=dup_status_col, value='')
                 ws.cell(row=row_num, column=dup_ref_col, value='')
 
-            # Match row fill for duplicate columns
+            # Match row fill for duplicate columns first.
             first_cell = ws.cell(row=row_num, column=1)
             is_yellow = False
             if first_cell.fill and first_cell.fill.patternType == 'solid':
                 color = first_cell.fill.start_color.rgb or first_cell.fill.start_color.index
                 if color and str(color).upper().endswith('FFFF00'):
                     is_yellow = True
-            if first_cell.fill and first_cell.fill.patternType == 'solid':
                 row_fill = PatternFill(
                     start_color=first_cell.fill.start_color.rgb,
                     end_color=first_cell.fill.end_color.rgb,
@@ -531,14 +779,19 @@ class InvoiceExtractorGUI:
                 ws.cell(row=row_num, column=dup_status_col).fill = row_fill
                 ws.cell(row=row_num, column=dup_ref_col).fill = row_fill
 
-            # Override row background for duplicates with darker alternating gray
-            if bill_no in dup_bills and not is_yellow:
-                idx = bill_to_index.get(bill_no, 0)
-                row_fill = dup_fill_dark if (idx % 2 == 0) else dup_fill_light
+            # Override whole row for duplicate entries with darker alternating gray.
+            if entry_idx in dup_entry_indices and not is_yellow:
+                dup_fill = dup_fill_dark if (entry_idx % 2 == 0) else dup_fill_light
                 for col in range(1, ws.max_column + 1):
-                    ws.cell(row=row_num, column=col).fill = row_fill
+                    ws.cell(row=row_num, column=col).fill = dup_fill
 
         wb.save(filepath)
+
+        duplicate_rows = sum(len(entries[idx]['rows']) for idx in dup_entry_indices)
+        return {
+            'duplicate_invoices': len(dup_entry_indices),
+            'duplicate_rows': duplicate_rows,
+        }
 
     def _refresh_batch_buttons(self):
         masters = self._find_master_spreadsheets()
@@ -1137,11 +1390,15 @@ class InvoiceExtractorGUI:
 
             history_rows = self._load_invoice_history()
             history_by_po = {}
+            history_by_bill = {}
             history_keys = set()
             for row in history_rows:
                 po = str(row.get('po_number', '')).strip()
                 if po:
                     history_by_po.setdefault(po, []).append(row)
+                bill_no_hist = str(row.get('bill_no', '')).strip()
+                if bill_no_hist:
+                    history_by_bill.setdefault(bill_no_hist, []).append(row)
                 key = _history_key(
                     row.get('bill_no', ''),
                     po,
@@ -1229,7 +1486,20 @@ class InvoiceExtractorGUI:
 
                 # Apply duplicate markers and update history log
                 if os.path.exists(self.output_file):
-                    self._apply_duplicate_flags(self.output_file, history_by_po)
+                    dup_summary = self._apply_duplicate_flags(
+                        self.output_file,
+                        history_by_po,
+                        history_by_bill
+                    )
+                    dup_invoices = int((dup_summary or {}).get('duplicate_invoices', 0))
+                    dup_rows = int((dup_summary or {}).get('duplicate_rows', 0))
+                    if dup_invoices:
+                        self.log(
+                            f"Duplicate invoices flagged: {dup_invoices} invoice(s), {dup_rows} row(s).",
+                            "warning"
+                        )
+                    else:
+                        self.log("Duplicate invoices flagged: 0.")
                 if new_history_entries:
                     self._append_invoice_history(new_history_entries)
 
@@ -1293,7 +1563,8 @@ class InvoiceExtractorGUI:
 
         self.log(f"Exporting CSV batches from {os.path.basename(master_path)}...", "info")
         self.log(
-            f"Batch limits: {BATCH_ROW_LIMIT} rows or {BATCH_INVOICE_LIMIT} invoices per file.",
+            f"Batch limit: {BATCH_TOTAL_LINE_LIMIT} total lines per file "
+            f"(header + up to {BATCH_ROW_LIMIT} data rows).",
             "info"
         )
         today_tag = f"{datetime.now().month}-{datetime.now().day}"
@@ -1303,9 +1574,32 @@ class InvoiceExtractorGUI:
                 "warning"
             )
 
-        rows = read_spreadsheet_rows(master_path)
-        if not rows:
+        raw_rows = read_spreadsheet_rows(master_path)
+        if not raw_rows:
             self.log("Master spreadsheet has no data rows.", "warning")
+            return
+
+        def _is_total_amount_summary_row(row):
+            # Keep master rows intact, but drop invoice summary rows for CSV batch uploads.
+            ps = str(row.get('product_service', '')).strip().lower()
+            if ps != 'total amount':
+                return False
+            return (
+                str(row.get('sku', '')).strip() == ''
+                and str(row.get('qty', '')).strip() == ''
+                and str(row.get('rate', '')).strip() == ''
+            )
+
+        rows = [r for r in raw_rows if not _is_total_amount_summary_row(r)]
+        dropped_summary_rows = len(raw_rows) - len(rows)
+        if dropped_summary_rows:
+            self.log(
+                f"Removed {dropped_summary_rows} Total Amount summary row(s) from CSV batches.",
+                "info"
+            )
+
+        if not rows:
+            self.log("No exportable rows after removing summary rows.", "warning")
             return
 
         # Group rows by invoice (keep invoices intact)
@@ -1328,18 +1622,13 @@ class InvoiceExtractorGUI:
         # Build batches without splitting invoices
         batches = []
         batch_rows = 0
-        batch_invoices = 0
         current_batch = []
         for inv_rows in invoices:
             inv_count = len(inv_rows)
-            if batch_rows and (
-                (batch_rows + inv_count) > BATCH_ROW_LIMIT
-                or (batch_invoices + 1) > BATCH_INVOICE_LIMIT
-            ):
+            if batch_rows and (batch_rows + inv_count) > BATCH_ROW_LIMIT:
                 batches.append(current_batch)
                 current_batch = []
                 batch_rows = 0
-                batch_invoices = 0
 
             if inv_count > BATCH_ROW_LIMIT and batch_rows == 0:
                 # Oversized invoice: put in its own batch
@@ -1348,7 +1637,6 @@ class InvoiceExtractorGUI:
 
             current_batch.extend(inv_rows)
             batch_rows += inv_count
-            batch_invoices += 1
 
         if current_batch:
             batches.append(current_batch)
@@ -1417,18 +1705,147 @@ class InvoiceExtractorGUI:
         thread = threading.Thread(target=self.run_validation_pipeline, daemon=True)
         thread.start()
 
+    def _find_config_path(self, filename):
+        candidate = os.path.join(self.required_dir, filename)
+        if os.path.exists(candidate):
+            return candidate
+        return None
+
+    def _resolve_row_memo(self, row, memo_by_bill):
+        memo = str(row.get('memo', '')).strip()
+        if memo:
+            return memo
+        bill_no = str(row.get('bill_no', '')).strip()
+        if not bill_no:
+            return ''
+        return str(memo_by_bill.get(bill_no, '')).strip()
+
+    def _build_shopify_core_updates(self, rows, memo_by_bill, po_cache, shopify_client):
+        updates = {}
+        stats = {
+            'checked': 0,
+            'matched': 0,
+            'missing': 0,
+            'mismatch': 0,
+        }
+        related_order_cache = {}
+        bill_group_amount_pool = {}
+
+        for row in rows:
+            if not _is_core_row(row):
+                continue
+
+            row_num = row['_row_num']
+            bill_no = str(row.get('bill_no', '')).strip()
+            memo = self._resolve_row_memo(row, memo_by_bill)
+            stats['checked'] += 1
+
+            if not memo:
+                updates[row_num] = ('NONE', 'missing')
+                stats['missing'] += 1
+                continue
+
+            cache_entry = po_cache.get(memo, {})
+            related_order_numbers = list(cache_entry.get('related_order_numbers') or [])
+            related_key = tuple(related_order_numbers)
+
+            if not related_order_numbers:
+                self.log(
+                    f"  No SkuNexus related order number found for PO {memo}; "
+                    "Shopify CORE cannot be confirmed.",
+                    "warning"
+                )
+                updates[row_num] = ('NONE', 'missing')
+                stats['missing'] += 1
+                continue
+
+            if related_key not in related_order_cache:
+                aggregated_amounts = []
+                total_shopify_orders = 0
+                related_label = ', '.join(related_order_numbers)
+                self.log(f"Checking Shopify CORE using SkuNexus related order number(s): {related_label}...")
+
+                for related_number in related_order_numbers:
+                    result, error = shopify_client.get_order_number_core_amounts(related_number)
+                    if error:
+                        self.log(
+                            f"  Shopify lookup failed for related order {related_number}: {error}",
+                            "warning"
+                        )
+                        continue
+
+                    orders = result.get('orders', [])
+                    core_amounts = list(result.get('core_amounts', []))
+                    total_shopify_orders += len(orders)
+                    aggregated_amounts.extend(core_amounts)
+
+                related_order_cache[related_key] = {
+                    'core_amounts': aggregated_amounts,
+                    'order_count': total_shopify_orders,
+                }
+
+                if aggregated_amounts:
+                    sample = ', '.join(f"{a:.2f}" for a in aggregated_amounts[:6])
+                    if len(aggregated_amounts) > 6:
+                        sample += ", ..."
+                    self.log(
+                        f"  Found Shopify CORE amount(s): {sample} "
+                        f"across {total_shopify_orders} order(s)"
+                    )
+                else:
+                    self.log(
+                        f"  No Shopify CORE line item found for related order number(s): "
+                        f"{related_label}",
+                        "warning"
+                    )
+
+            group_key = (bill_no, memo, related_key)
+            if group_key not in bill_group_amount_pool:
+                bill_group_amount_pool[group_key] = list(
+                    related_order_cache.get(related_key, {}).get('core_amounts', [])
+                )
+            core_pool = bill_group_amount_pool[group_key]
+
+            invoice_rate = _to_float_value(row.get('rate', ''))
+            if not core_pool:
+                updates[row_num] = ('NONE', 'missing')
+                stats['missing'] += 1
+                continue
+
+            matched_idx = None
+            if invoice_rate is not None:
+                for idx, core_amount in enumerate(core_pool):
+                    if abs(core_amount - invoice_rate) <= SHOPIFY_CORE_RATE_TOLERANCE:
+                        matched_idx = idx
+                        break
+
+            if matched_idx is not None:
+                matched_amount = core_pool.pop(matched_idx)
+                updates[row_num] = (f"{matched_amount:.2f}", 'ok')
+                stats['matched'] += 1
+                continue
+
+            if invoice_rate is None:
+                selected_amount = core_pool.pop(0)
+                updates[row_num] = (f"{selected_amount:.2f}", 'ok')
+                stats['matched'] += 1
+                continue
+
+            closest_idx = min(range(len(core_pool)), key=lambda i: abs(core_pool[i] - invoice_rate))
+            closest_amount = core_pool.pop(closest_idx)
+            updates[row_num] = (f"{closest_amount:.2f}", 'mismatch')
+            stats['mismatch'] += 1
+
+        return updates, stats
+
     def run_validation_pipeline(self):
         """Validate POs against SkuNexus - runs in background thread."""
         try:
             self.log("=== SkuNexus PO Validation ===", "info")
 
             # Load SkuNexus credentials from config file
-            config_path = os.path.join(self.required_dir, 'skunexus_config.json')
-            if not os.path.exists(config_path):
-                config_path = os.path.join(self.app_dir, 'skunexus_config.json')
-            if not os.path.exists(config_path):
-                config_path = os.path.join(self.base_dir, 'skunexus_config.json')
-            if not os.path.exists(config_path):
+            config_path = self._find_config_path('skunexus_config.json')
+            if not config_path or not os.path.exists(config_path):
                 self.log("ERROR: skunexus_config.json not found!", "error")
                 self.log(
                     "Create skunexus_config.json with 'email' and 'password' in App/required.",
@@ -1461,6 +1878,107 @@ class InvoiceExtractorGUI:
                 return
 
             self.log("Successfully logged into SkuNexus", "success")
+
+            # Shopify CORE validation is required for Validate POs.
+            shopify_client = None
+            shopify_enabled = False
+            shopify_checked_count = 0
+            shopify_matched_count = 0
+            shopify_missing_count = 0
+            shopify_mismatch_count = 0
+
+            shopify_config_path = self._find_config_path('shopify_config.json')
+            if not shopify_config_path or not os.path.exists(shopify_config_path):
+                self.log("ERROR: shopify_config.json not found in App/required.", "error")
+                self.finish_validation("Validation failed - missing Shopify config")
+                return
+
+            try:
+                with open(shopify_config_path, 'r', encoding='utf-8-sig') as f:
+                    shopify_config = json.load(f)
+            except Exception as e:
+                self.log(f"ERROR: Could not read shopify_config.json: {e}", "error")
+                self.finish_validation("Validation failed - invalid Shopify config")
+                return
+
+            shop = (
+                shopify_config.get('shop')
+                or shopify_config.get('shop_domain')
+                or shopify_config.get('store')
+                or ''
+            )
+            client_id = shopify_config.get('client_id') or shopify_config.get('clientId') or ''
+            client_secret = (
+                shopify_config.get('client_secret')
+                or shopify_config.get('clientSecret')
+                or ''
+            )
+            scopes = shopify_config.get('scopes') or ['read_orders']
+            if isinstance(scopes, str):
+                scopes = [p.strip() for p in re.split(r'[,\s]+', scopes) if p.strip()]
+            elif not isinstance(scopes, list):
+                scopes = ['read_orders']
+            if 'read_orders' not in scopes:
+                scopes = list(scopes) + ['read_orders']
+            api_version = shopify_config.get('api_version') or '2025-10'
+            auth_mode = str(shopify_config.get('auth_mode') or 'auto').strip().lower()
+            redirect_uri = str(shopify_config.get('redirect_uri') or '').strip()
+            callback_host = str(shopify_config.get('callback_host') or '127.0.0.1').strip()
+            callback_bind_host = str(
+                shopify_config.get('callback_bind_host')
+                or shopify_config.get('callback_host')
+                or '0.0.0.0'
+            ).strip()
+            callback_port = int(shopify_config.get('callback_port') or 8765)
+            callback_bind_port = int(
+                shopify_config.get('callback_bind_port')
+                or shopify_config.get('callback_port')
+                or callback_port
+            )
+            callback_path = str(shopify_config.get('callback_path') or '/shopify/callback').strip()
+            try:
+                oauth_timeout = int(
+                    shopify_config.get('oauth_timeout')
+                    or shopify_config.get('auth_timeout_seconds')
+                    or 120
+                )
+            except Exception:
+                oauth_timeout = 120
+
+            if not (shop and client_id and client_secret):
+                self.log(
+                    "ERROR: shopify_config.json is missing shop/client_id/client_secret.",
+                    "error"
+                )
+                self.finish_validation("Validation failed - incomplete Shopify config")
+                return
+
+            self.set_progress(8, "Authenticating Shopify...")
+            self.log(f"Authenticating Shopify (mode: {auth_mode or 'auto'})...")
+            shopify_client = ShopifyClient(
+                shop=shop,
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=scopes,
+                api_version=api_version,
+                token_file=os.path.join(self.required_dir, 'shopify_token.json'),
+                status_callback=self.log,
+                auth_mode=auth_mode,
+                callback_host=callback_host,
+                redirect_uri=redirect_uri,
+                callback_bind_host=callback_bind_host,
+                callback_bind_port=callback_bind_port,
+                callback_port=callback_port,
+                callback_path=callback_path,
+                oauth_timeout=oauth_timeout,
+            )
+            ok, shopify_message = shopify_client.authenticate()
+            if not ok:
+                self.log(f"ERROR: Shopify authentication failed: {shopify_message}", "error")
+                self.finish_validation("Validation failed - Shopify authentication required")
+                return
+            self.log(f"Successfully connected to Shopify ({shopify_message})", "success")
+            shopify_enabled = True
 
             if not self.is_running:
                 self.finish_validation("Stopped by user.")
@@ -1503,7 +2021,7 @@ class InvoiceExtractorGUI:
             skipped_count = 0
             already_validated_count = 0
             locked_files_count = 0
-            po_cache = {}  # Cache SkuNexus data by PO number
+            po_cache = {}  # Cache SkuNexus data + margin by PO number
 
             processed_rows = 0
 
@@ -1535,10 +2053,10 @@ class InvoiceExtractorGUI:
                 # Group rows by PO number (collect vendor/SKU hints)
                 po_groups = {}
                 for row in rows:
-                    memo = row.get('memo', '')
+                    memo = str(row.get('memo', '')).strip()
                     if not memo:
                         bill_no = str(row.get('bill_no', '')).strip()
-                        memo = memo_by_bill.get(bill_no, '')
+                        memo = str(memo_by_bill.get(bill_no, '')).strip()
                     if not memo:
                         continue
                     group = po_groups.setdefault(memo, {'rows': [], 'vendors': [], 'skus': []})
@@ -1551,6 +2069,8 @@ class InvoiceExtractorGUI:
                         group['skus'].append(sku)
 
                 updates = {}
+                margin_updates = {}
+                first_margin_row_by_group = {}
                 for row in rows:
                     if not self.is_running:
                         self.finish_validation("Stopped by user.")
@@ -1561,16 +2081,14 @@ class InvoiceExtractorGUI:
                     self.set_progress(progress, f"Validating row {processed_rows}/{total_rows}...")
 
                     row_num = row['_row_num']
+                    bill_no = str(row.get('bill_no', '')).strip()
 
                     existing_validation = str(row.get('skunexus_validation', '')).strip()
-                    if existing_validation:
-                        already_validated_count += 1
-                        continue
 
-                    memo = row.get('memo', '')
+                    memo = str(row.get('memo', '')).strip()
                     if not memo:
                         bill_no = str(row.get('bill_no', '')).strip()
-                        memo = memo_by_bill.get(bill_no, '')
+                        memo = str(memo_by_bill.get(bill_no, '')).strip()
                     category = row.get('category', '')
 
                     # Skip rows without PO number
@@ -1606,12 +2124,48 @@ class InvoiceExtractorGUI:
 
                         if error:
                             self.log(f"  Could not find PO {po_number}: {error}", "warning")
-                            po_cache[memo] = None
+                            po_cache[memo] = {
+                                'sn_data': None,
+                                'margin': None,
+                                'related_order_numbers': [],
+                            }
                         else:
-                            po_cache[memo] = sn_data
+                            margin_value, margin_error = client.get_po_margin(sn_data, po_number)
+                            if margin_error:
+                                self.log(f"  Margin unavailable for PO {po_number}: {margin_error}", "warning")
+                            else:
+                                self.log(f"  PO margin: {margin_value:.4f}")
+                            related_order_numbers = _extract_related_order_numbers(sn_data)
+                            if related_order_numbers:
+                                self.log(
+                                    "  Related order number(s): "
+                                    f"{', '.join(related_order_numbers)}"
+                                )
+                            else:
+                                self.log("  No related order number found in SkuNexus", "warning")
+                            po_cache[memo] = {
+                                'sn_data': sn_data,
+                                'margin': margin_value,
+                                'related_order_numbers': related_order_numbers,
+                            }
                             self.log(f"  Found PO with {len(sn_data.get('lineItems', {}).get('rows', []))} line items")
 
-                    sn_data = po_cache.get(memo)
+                    cache_entry = po_cache.get(memo, {})
+                    sn_data = cache_entry.get('sn_data')
+                    margin_value = cache_entry.get('margin')
+
+                    if margin_value is not None:
+                        margin_group_key = (bill_no, memo)
+                        if margin_group_key not in first_margin_row_by_group:
+                            first_margin_row_by_group[margin_group_key] = row_num
+                            margin_updates[row_num] = margin_value
+                        else:
+                            # Keep PO margin visible only on the first item row for this bill/PO.
+                            margin_updates[row_num] = ''
+
+                    if existing_validation:
+                        already_validated_count += 1
+                        continue
 
                     if sn_data is None:
                         # PO not found in SkuNexus
@@ -1632,10 +2186,31 @@ class InvoiceExtractorGUI:
                         sku = _get_row_sku(row) or 'N/A'
                         self.log(f"  Row {row_num} (SKU: {sku}) - FAILED: {', '.join(failed_fields)}", "warning")
 
-                if updates:
+                shopify_core_updates = {}
+                if shopify_enabled and shopify_client:
+                    (
+                        shopify_core_updates,
+                        shopify_stats
+                    ) = self._build_shopify_core_updates(rows, memo_by_bill, po_cache, shopify_client)
+                    shopify_checked_count += shopify_stats.get('checked', 0)
+                    shopify_matched_count += shopify_stats.get('matched', 0)
+                    shopify_missing_count += shopify_stats.get('missing', 0)
+                    shopify_mismatch_count += shopify_stats.get('mismatch', 0)
+
+                if updates or margin_updates or shopify_core_updates:
                     try:
-                        write_validation_results(filepath, updates)
-                        self.log(f"Updated {len(updates)} row(s) in {basename}", "success")
+                        write_validation_results(
+                            filepath,
+                            updates,
+                            margin_updates,
+                            shopify_core_updates
+                        )
+                        self.log(
+                            f"Updated {len(updates)} validation row(s) and "
+                            f"{len(margin_updates)} margin row(s) and "
+                            f"{len(shopify_core_updates)} Shopify CORE row(s) in {basename}",
+                            "success"
+                        )
                     except PermissionError as e:
                         locked_files_count += 1
                         self.log(
@@ -1663,6 +2238,13 @@ class InvoiceExtractorGUI:
                 self.log(f"Already validated rows skipped: {already_validated_count}")
             if skipped_count:
                 self.log(f"Non-SKU/Non-PO rows skipped: {skipped_count}")
+            if shopify_enabled:
+                self.log(f"Shopify CORE rows checked: {shopify_checked_count}")
+                self.log(f"Shopify CORE matched: {shopify_matched_count}", "success")
+                if shopify_mismatch_count:
+                    self.log(f"Shopify CORE mismatched: {shopify_mismatch_count}", "warning")
+                if shopify_missing_count:
+                    self.log(f"Shopify CORE missing: {shopify_missing_count}", "error")
             if locked_files_count:
                 self.log(
                     f"Files skipped due to lock/open Excel window: {locked_files_count}",

@@ -455,6 +455,121 @@ def _extract_total_amount(text):
     return pick_best(weak_candidates)
 
 
+def _extract_ppe_total_usd(text):
+    """Extract PPE invoice total from footer totals, preferring explicit 'Total USD'."""
+    if not text:
+        return ''
+
+    lines = text.splitlines()
+    if not lines:
+        return ''
+
+    # PPE table headers use "Total Price" for item rows; this is not invoice total.
+    table_header_tokens = ('item/description', 'order qty', 'invoiced qt', 'unit price', 'disc %')
+    strong_tokens = ('total usd', 'invoice total', 'grand total', 'total amount', 'amount due', 'balance due')
+
+    explicit_usd = []
+    footer_candidates = []
+
+    inline_usd_re = re.compile(
+        r'(?i)\btotal\s+usd\b\s*:?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})?|[0-9]+(?:\.\d{1,2})?)'
+    )
+    label_only_usd_re = re.compile(r'(?i)\btotal\s+usd\b\s*:?\s*$')
+
+    for idx, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if not line:
+            continue
+        lower = line.lower()
+
+        # Fast path: explicit Total USD on same line.
+        inline_match = inline_usd_re.search(line)
+        if inline_match:
+            normalized = _normalize_amount_string(inline_match.group(1))
+            if normalized:
+                explicit_usd.append((idx, normalized))
+            continue
+
+        # "Total USD" label on one line, amount on the next line.
+        if label_only_usd_re.search(line):
+            for j in range(idx + 1, min(len(lines), idx + 3)):
+                next_line = lines[j].strip()
+                if not next_line:
+                    continue
+                amounts = _extract_amounts_from_line(next_line)
+                if amounts:
+                    normalized = _normalize_amount_string(amounts[0][1])
+                    if normalized:
+                        explicit_usd.append((j, normalized))
+                    break
+            continue
+
+        # Generic PPE footer total detection.
+        label_kind = None
+        if any(tok in lower for tok in strong_tokens):
+            label_kind = 'strong'
+        elif 'total price' in lower:
+            # Ignore the PPE line-item table header.
+            if any(tok in lower for tok in table_header_tokens):
+                continue
+            # Allow footer variants that may say "Total Price".
+            label_kind = 'strong'
+        elif 'total' in lower:
+            label_kind = 'total'
+        elif 'subtotal' in lower:
+            label_kind = 'subtotal'
+
+        if not label_kind:
+            continue
+
+        amounts = _extract_amounts_from_line(line)
+        lookahead = 0
+        if not amounts:
+            for j in range(idx + 1, min(len(lines), idx + 3)):
+                next_line = lines[j].strip()
+                if not next_line:
+                    continue
+                amounts = _extract_amounts_from_line(next_line)
+                if amounts:
+                    lookahead = j - idx
+                    break
+
+        if not amounts:
+            continue
+
+        for value, raw in amounts:
+            priority = 0
+            if label_kind == 'strong':
+                priority = 3
+            elif label_kind == 'total':
+                priority = 2
+            elif label_kind == 'subtotal':
+                priority = 1
+            footer_candidates.append({
+                'line_index': idx + lookahead,
+                'value': value,
+                'raw': raw,
+                'priority': priority,
+            })
+
+    # Prefer explicit Total USD when present.
+    if explicit_usd:
+        explicit_usd.sort(key=lambda x: x[0])
+        return explicit_usd[-1][1]
+
+    if not footer_candidates:
+        return ''
+
+    # Focus on the bottom-most total-like group, then pick the largest amount.
+    max_idx = max(c['line_index'] for c in footer_candidates)
+    bottom_group = [c for c in footer_candidates if c['line_index'] >= (max_idx - 12)]
+    if not bottom_group:
+        bottom_group = footer_candidates
+
+    bottom_group.sort(key=lambda c: (c['value'], c['priority'], c['line_index']), reverse=True)
+    return _normalize_amount_string(bottom_group[0]['raw'])
+
+
 # ---------------------------------------------------------------------------
 # Vendor Detection
 # ---------------------------------------------------------------------------
@@ -697,7 +812,7 @@ def _extract_name_after_customer(line):
             # Remove repeated customer/DBA prefixes
             while True:
                 cleaned = re.sub(
-                    r'^(diesel\s+power\s+products|diesel\s+power|power\s+products|dpp)\b\s*',
+                    r'^(diesel\s+power\s+products|power\s+products\s+unlimited|dpp)\b\s*',
                     '', trailing, flags=re.IGNORECASE
                 ).strip()
                 cleaned = re.sub(
@@ -1110,6 +1225,18 @@ def _is_sb_vendor_name(name):
     if canonical_key:
         if canonical_key in {'sb', 'sbandb'} or 'sandb' in canonical_key:
             return True
+    return False
+
+
+def _is_ppe_vendor_name(name):
+    """Return True if vendor name looks like Pacific Performance Engineering."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'pacificperformanceengineering' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    if canonical_key and 'pacificperformanceengineering' in canonical_key:
+        return True
     return False
 
 
@@ -2332,7 +2459,12 @@ def parse_invoice_text(text, filepath=None):
             data['shipping_description'] = 'Drop Ship'
 
     # --- Total ---
-    data['total'] = _extract_total_amount(text)
+    if _is_ppe_vendor_name(data.get('vendor', '')):
+        data['total'] = _extract_ppe_total_usd(text)
+    else:
+        data['total'] = _extract_total_amount(text)
+    if not data['total']:
+        data['total'] = _extract_total_amount(text)
     if not data['total']:
         data['total'] = parse_field(text, [
             r'(?:Total\s+USD|Total\s+Amount|Invoice\s+Total|Grand\s+Total|Total\s+Due|^Total)\s*:?\s*\$?([\d,]+\.?\d*)',
@@ -2364,6 +2496,14 @@ def parse_invoice(filepath, status_callback=None):
     """
     cb = status_callback or (lambda msg, tag=None: None)
     filename = os.path.basename(filepath)
+    page_count = 1
+
+    # Best effort page count (used for vendor-specific stock-order handling).
+    try:
+        with pdfplumber.open(filepath) as pdf:
+            page_count = max(1, len(pdf.pages))
+    except Exception:
+        page_count = 1
 
     # Step 1: Try text extraction with pdfplumber
     cb(f"  Extracting text from {filename}...")
@@ -2388,6 +2528,24 @@ def parse_invoice(filepath, status_callback=None):
     if not data.get('vendor'):
         data['vendor'] = infer_vendor_from_filename(filename)
     data['vendor'] = normalize_vendor_name(data.get('vendor', ''))
+    data['page_count'] = page_count
+
+    # PPE-specific rule: multi-page invoices are treated as stock orders.
+    if page_count > 1 and _is_ppe_vendor_name(data.get('vendor', '')):
+        data['stock_order'] = True
+        data['stock_order_description'] = 'STOCK ORDER'
+        data['customer'] = 'Power Products Unlimited'
+        data['line_items'] = []
+        data['shipping_cost'] = ''
+        data['shipping_description'] = ''
+        data['total'] = ''
+        bill_no = str(data.get('invoice_number') or '').strip() or 'N/A'
+        po_number = str(data.get('po_number') or '').strip() or 'N/A'
+        cb(
+            "  PPE multi-page invoice detected; outputting STOCK ORDER summary row "
+            f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
+            "warning"
+        )
 
     data['source_file'] = filename
     data['raw_text'] = text

@@ -131,7 +131,10 @@ class GmailClient:
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.client_secret, SCOPES
                 )
-                creds = flow.run_local_server(port=0)
+                creds = flow.run_local_server(
+                    port=0,
+                    prompt='select_account'
+                )
                 should_persist_token = True
 
         self.service = build('gmail', 'v1', credentials=creds)

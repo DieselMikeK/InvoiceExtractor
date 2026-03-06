@@ -170,6 +170,15 @@ class SkuNexusClient:
                   total_price
                 }}
               }}
+              relatedOrder {{
+                id
+                label
+              }}
+              allRelatedOrders {{
+                id
+                label
+                is_master
+              }}
             }}
           }}
         }}
@@ -308,6 +317,126 @@ class SkuNexusClient:
         """Backwards-compatible wrapper (strict matching)."""
         return self.get_best_po_with_line_items(po_number)
 
+    def get_order_grouped_items(self, order_id):
+        """Fetch grouped order items used by the related-order UI.
+
+        Args:
+            order_id: Related order UUID
+
+        Returns:
+            tuple: (order_details dict or None, error message or None)
+        """
+        query = f"""
+        query V1Queries {{
+          order {{
+            details(id: "{order_id}") {{
+              id
+              label
+              groupedDecisionItems {{
+                qty
+                relatedProduct {{
+                  sku
+                  customValues {{
+                    custom_field_id
+                    value
+                  }}
+                }}
+                decisionItems {{
+                  decidedItems {{
+                    decisions {{
+                      qty
+                      relatedPurchaseOrder {{
+                        label
+                      }}
+                    }}
+                  }}
+                }}
+              }}
+            }}
+          }}
+        }}
+        """
+
+        data, error = self._query(query)
+        if error:
+            return None, error
+
+        details = data.get('order', {}).get('details')
+        if not details:
+            return None, "Related order not found"
+
+        return details, None
+
+    def get_po_margin(self, po_details, po_number=None):
+        """Calculate PO margin using related-order item prices.
+
+        Formula:
+            margin = (related_item_price_sum - po_unit_sum) / related_item_price_sum
+
+        Notes:
+        - `po_unit_sum` uses PO line item unit prices (not line totals).
+        - `related_item_price_sum` uses related order grouped item custom field
+          `price` for rows mapped to this PO.
+        """
+        if not po_details:
+            return None, "Missing PO details"
+
+        po_label = str(po_details.get('label', '')).strip()
+        target_po = _clean_po_number(po_number or po_label)
+        target_norm = _normalize_po(target_po or po_label)
+        if not target_norm:
+            return None, "PO number is empty"
+
+        # Sum PO "Unit" prices (per row) as requested.
+        po_unit_sum = 0.0
+        for line in po_details.get('lineItems', {}).get('rows', []) or []:
+            price_val = _to_float(line.get('price'))
+            if price_val is not None:
+                po_unit_sum += price_val
+
+        related_orders = po_details.get('allRelatedOrders') or []
+        if not related_orders:
+            single_related = po_details.get('relatedOrder')
+            if single_related and single_related.get('id'):
+                related_orders = [single_related]
+
+        if not related_orders:
+            return None, "No related order found"
+
+        related_item_sum = 0.0
+        counted_rows = 0
+
+        for related in related_orders:
+            order_id = related.get('id')
+            if not order_id:
+                continue
+
+            order_details, error = self.get_order_grouped_items(order_id)
+            if error:
+                continue
+
+            grouped_items = order_details.get('groupedDecisionItems') or []
+            for grouped in grouped_items:
+                if not _group_item_maps_to_po(grouped, target_norm):
+                    continue
+
+                item_price = _extract_custom_value(
+                    grouped.get('relatedProduct', {}).get('customValues', []),
+                    'price'
+                )
+                item_price_num = _to_float(item_price)
+                if item_price_num is None:
+                    continue
+
+                related_item_sum += item_price_num
+                counted_rows += 1
+
+        if related_item_sum <= 0:
+            return None, "No related order item prices found"
+
+        margin = (related_item_sum - po_unit_sum) / related_item_sum
+        return margin, None
+
 
 def _clean_po_number(po_number):
     """Normalize PO number input for search."""
@@ -322,6 +451,57 @@ def _normalize_po(value):
     if digits == '':
         return ''
     return digits.lstrip('0') or '0'
+
+
+def _to_float(value):
+    if value is None:
+        return None
+    try:
+        text = str(value).strip().replace(',', '').replace('$', '')
+        if text == '':
+            return None
+        return float(text)
+    except (ValueError, TypeError):
+        return None
+
+
+def _looks_like_line_amount(invoice_amount, invoice_qty, invoice_price):
+    """Return True when an amount appears to be a per-line total (qty * rate).
+
+    New exports store invoice-level total in the `amount` field (header: Total Amount)
+    on the first line only. In that format, `amount` should not be validated as a
+    line total against SkuNexus line item `total_price`.
+    """
+    amount_num = _to_float(invoice_amount)
+    qty_num = _to_float(invoice_qty)
+    price_num = _to_float(invoice_price)
+    if amount_num is None or qty_num is None or price_num is None:
+        return False
+
+    expected = qty_num * price_num
+    return abs(amount_num - expected) <= 0.05
+
+
+def _extract_custom_value(custom_values, field_id):
+    for cv in custom_values or []:
+        if str(cv.get('custom_field_id', '')).strip().lower() == str(field_id).lower():
+            return cv.get('value')
+    return None
+
+
+def _group_item_maps_to_po(grouped_item, target_po_norm):
+    decision_items = grouped_item.get('decisionItems') or []
+    for decision_item in decision_items:
+        decided_items = decision_item.get('decidedItems') or []
+        for decided in decided_items:
+            decisions = decided.get('decisions') or []
+            for decision in decisions:
+                related_po_label = str(
+                    (decision.get('relatedPurchaseOrder') or {}).get('label', '')
+                ).strip()
+                if _normalize_po(related_po_label) == target_po_norm:
+                    return True
+    return False
 
 
 def _normalize_vendor_key(name):
@@ -486,15 +666,18 @@ def validate_po_row(skunexus_data, invoice_row, vendor_aliases=None):
         if invoice_price:
             failed_fields.append('Price (parse error)')
 
-    # Validate line total/amount
-    try:
-        invoice_amount_num = float(str(invoice_amount).replace(',', '').replace('$', ''))
-        sn_total_num = float(str(matching_item.get('total_price', 0)).replace(',', ''))
-        if abs(invoice_amount_num - sn_total_num) > 0.02:
-            failed_fields.append(f'Amount (invoice:{invoice_amount_num} vs SKN:{sn_total_num})')
-    except (ValueError, TypeError):
-        if invoice_amount:
-            failed_fields.append('Amount (parse error)')
+    # Validate line total/amount only when the invoice value looks like a true
+    # per-line amount (qty * rate). This avoids false failures when the column
+    # stores invoice-level "Total Amount" on the first row.
+    if _looks_like_line_amount(invoice_amount, invoice_qty, invoice_price):
+        try:
+            invoice_amount_num = float(str(invoice_amount).replace(',', '').replace('$', ''))
+            sn_total_num = float(str(matching_item.get('total_price', 0)).replace(',', ''))
+            if abs(invoice_amount_num - sn_total_num) > 0.02:
+                failed_fields.append(f'Amount (invoice:{invoice_amount_num} vs SKN:{sn_total_num})')
+        except (ValueError, TypeError):
+            if invoice_amount:
+                failed_fields.append('Amount (parse error)')
 
     is_valid = len(failed_fields) == 0
     return is_valid, failed_fields

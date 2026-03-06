@@ -1,12 +1,18 @@
 """Spreadsheet writer: writes parsed invoice data to QuickBooks-compatible CSV/Excel format."""
 import csv
 import os
+from copy import copy
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 
 # Alternating row background color
 ALT_ROW_FILL = PatternFill(start_color="EAEAEA", end_color="EAEAEA", fill_type="solid")
 SB_DELIVERY_FEE_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+PPE_STOCK_ORDER_FILL = PatternFill(start_color="D8B4FE", end_color="D8B4FE", fill_type="solid")
+MARGIN_LOW_FILL = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+SHOPIFY_CORE_MISSING_FILL = PatternFill(start_color="FFFF6666", end_color="FFFF6666", fill_type="solid")
+SHOPIFY_CORE_MISMATCH_FILL = PatternFill(start_color="FFFFC000", end_color="FFFFC000", fill_type="solid")
+SB_DELIVERY_FEE_FONT_COLOR = "FFFF0000"
 
 
 # QuickBooks Bill Import column definitions (matching Taylor's format)
@@ -32,15 +38,20 @@ COLUMNS = [
     ('customer_project', 'Customer/Project'),
     ('tax_rate', 'Tax Rate'),
     ('class_field', 'Class'),
-    ('duplicate_status', 'Duplicate Status'),
-    ('duplicate_reference', 'Duplicate Reference'),
+    ('skunexus_margin', 'SkuNexus Margin'),
     ('skunexus_validation', 'SkuNexus Validation'),  # Yes/No
     ('skunexus_failed_fields', 'SkuNexus Failed Fields'),  # Which fields failed
+    ('shopify_core', 'Shopify CORE'),
+    ('duplicate_status', 'Duplicate Status'),
+    ('duplicate_reference', 'Duplicate Reference'),
 ]
 
 # Column indices for validation columns (1-indexed for openpyxl)
-VALIDATION_COL = 23  # Column W - SkuNexus Validation
-FAILED_FIELDS_COL = 24  # Column X - SkuNexus Failed Fields
+COLUMN_INDEX = {key: idx + 1 for idx, (key, _) in enumerate(COLUMNS)}
+VALIDATION_COL = COLUMN_INDEX['skunexus_validation']
+FAILED_FIELDS_COL = COLUMN_INDEX['skunexus_failed_fields']
+MARGIN_COL = COLUMN_INDEX['skunexus_margin']
+MARGIN_WARNING_THRESHOLD = 0.1999
 
 PURCHASES_CATEGORY = 'Purchases'
 FREIGHT_CATEGORY = 'Freight and shipping costs'
@@ -50,6 +61,139 @@ TYPE_ITEM = 'Item Details'
 
 def _is_csv(filepath):
     return str(filepath).lower().endswith('.csv')
+
+
+def _header_for_key(key):
+    for column_key, header in COLUMNS:
+        if column_key == key:
+            return header
+    return key
+
+
+def _header_aliases_for_key(key):
+    """Legacy header aliases for backwards compatibility with existing files."""
+    if key == 'amount':
+        return ['Total Amount']
+    return []
+
+
+def _build_header_map(ws):
+    """Return mapping of normalized header text -> 1-based column index."""
+    header_map = {}
+    for col in range(1, ws.max_column + 1):
+        value = ws.cell(row=1, column=col).value
+        if value is None:
+            continue
+        key = str(value).strip().lower()
+        if key and key not in header_map:
+            header_map[key] = col
+    return header_map
+
+
+def _preferred_col_for_key(key):
+    return COLUMN_INDEX.get(key)
+
+
+def _resolve_col_by_key(ws, key, create_if_missing=False):
+    """Resolve a worksheet column by key/header, optionally creating it."""
+    header = _header_for_key(key)
+    header_map = _build_header_map(ws)
+    header_candidates = [header] + _header_aliases_for_key(key)
+    for candidate in header_candidates:
+        header_key = str(candidate).strip().lower()
+        if header_key in header_map:
+            return header_map[header_key]
+
+    if not create_if_missing:
+        return _preferred_col_for_key(key)
+
+    preferred = _preferred_col_for_key(key)
+    if preferred and not ws.cell(row=1, column=preferred).value:
+        col_idx = preferred
+    else:
+        col_idx = ws.max_column + 1
+
+    ws.cell(row=1, column=col_idx, value=header)
+    ws.cell(row=1, column=col_idx).font = ws.cell(row=1, column=col_idx).font.copy(bold=True)
+    return col_idx
+
+
+def _capture_cell(cell):
+    return {
+        'value': cell.value,
+        'font': copy(cell.font),
+        'fill': copy(cell.fill),
+        'border': copy(cell.border),
+        'alignment': copy(cell.alignment),
+        'number_format': cell.number_format,
+        'protection': copy(cell.protection),
+        'hyperlink': copy(cell.hyperlink) if cell.hyperlink else None,
+        'comment': copy(cell.comment) if cell.comment else None,
+    }
+
+
+def _apply_cell_snapshot(cell, snapshot):
+    cell.value = snapshot['value']
+    cell.font = copy(snapshot['font'])
+    cell.fill = copy(snapshot['fill'])
+    cell.border = copy(snapshot['border'])
+    cell.alignment = copy(snapshot['alignment'])
+    cell.number_format = snapshot['number_format']
+    cell.protection = copy(snapshot['protection'])
+    cell.hyperlink = copy(snapshot['hyperlink']) if snapshot['hyperlink'] else None
+    cell.comment = copy(snapshot['comment']) if snapshot['comment'] else None
+
+
+def _normalize_tail_columns(ws):
+    """Normalize tail columns to:
+    Class | SkuNexus Margin | SkuNexus Validation | SkuNexus Failed Fields | Shopify CORE | Duplicate Status | Duplicate Reference
+    """
+    target_cols = {
+        'skunexus_margin': 21,
+        'skunexus_validation': 22,
+        'skunexus_failed_fields': 23,
+        'shopify_core': 24,
+        'duplicate_status': 25,
+        'duplicate_reference': 26,
+    }
+
+    header_map = _build_header_map(ws)
+    source_cols = {}
+    already_aligned = True
+
+    for key, target_col in target_cols.items():
+        header = _header_for_key(key)
+        source_col = header_map.get(str(header).strip().lower())
+        source_cols[key] = source_col
+        if source_col != target_col:
+            already_aligned = False
+
+    if already_aligned:
+        return
+
+    # Ensure target columns exist.
+    if ws.max_column < 26:
+        ws.cell(row=1, column=26, value=ws.cell(row=1, column=26).value)
+
+    for row in range(1, ws.max_row + 1):
+        snapshots = {}
+        for key, source_col in source_cols.items():
+            if source_col:
+                snapshots[key] = _capture_cell(ws.cell(row=row, column=source_col))
+            else:
+                snapshots[key] = None
+
+        for key, target_col in target_cols.items():
+            target_cell = ws.cell(row=row, column=target_col)
+            snap = snapshots.get(key)
+            if snap is not None:
+                _apply_cell_snapshot(target_cell, snap)
+            else:
+                if row == 1:
+                    target_cell.value = _header_for_key(key)
+                    target_cell.font = target_cell.font.copy(bold=True)
+                else:
+                    target_cell.value = ''
 
 
 def _get_csv_writer(filepath):
@@ -66,6 +210,7 @@ def get_or_create_workbook(filepath):
     if os.path.exists(filepath):
         wb = load_workbook(filepath)
         ws = wb.active
+        _normalize_tail_columns(ws)
     else:
         wb = Workbook()
         ws = wb.active
@@ -80,8 +225,9 @@ def get_or_create_workbook(filepath):
             'F': 12, 'G': 12, 'H': 15, 'I': 14, 'J': 18,
             'K': 18, 'L': 15, 'M': 6, 'N': 10, 'O': 40, 'P': 12,
             'Q': 10, 'R': 18, 'S': 10, 'T': 12,
-            'U': 20, 'V': 40,  # Duplicate columns
-            'W': 18, 'X': 40,  # Validation columns
+            'U': 16, 'V': 18, 'W': 40,  # SkuNexus columns
+            'X': 14,  # Shopify CORE
+            'Y': 20, 'Z': 40,  # Duplicate columns
         }
         for col_letter, width in widths.items():
             ws.column_dimensions[col_letter].width = width
@@ -89,14 +235,38 @@ def get_or_create_workbook(filepath):
     return wb, ws
 
 
-def count_unique_invoices(ws):
-    """Count unique Bill No. values in the worksheet to determine invoice index."""
-    bill_nos = set()
+def count_existing_invoice_groups(ws):
+    """Count existing invoice groups for alternating row color.
+
+    We count invoice starts, not unique bill numbers. This keeps alternating
+    row colors stable even when two invoices share the same Bill No.
+    """
+    memo_col = _resolve_col_by_key(ws, 'memo', create_if_missing=False)
+    mailing_col = _resolve_col_by_key(ws, 'mailing_address', create_if_missing=False)
+    terms_col = _resolve_col_by_key(ws, 'terms', create_if_missing=False)
+    customer_col = _resolve_col_by_key(ws, 'customer_project', create_if_missing=False)
+
+    count = 0
+    saw_any_row = False
     for row in range(2, ws.max_row + 1):  # Skip header row
-        bill_no = ws.cell(row=row, column=1).value  # Column A is Bill No.
-        if bill_no:
-            bill_nos.add(bill_no)
-    return len(bill_nos)
+        bill_cell = ws.cell(row=row, column=1)
+        bill_no = str(bill_cell.value or '').strip()
+        memo = str(ws.cell(row=row, column=memo_col).value or '').strip() if memo_col else ''
+        mailing = str(ws.cell(row=row, column=mailing_col).value or '').strip() if mailing_col else ''
+        terms = str(ws.cell(row=row, column=terms_col).value or '').strip() if terms_col else ''
+        customer = str(ws.cell(row=row, column=customer_col).value or '').strip() if customer_col else ''
+        has_link = bool(getattr(bill_cell, 'hyperlink', None))
+        is_invoice_start = has_link or bool(memo) or bool(mailing) or bool(terms) or bool(customer)
+
+        if is_invoice_start:
+            count += 1
+            saw_any_row = True
+        elif not saw_any_row and bill_no:
+            # Legacy/fallback rows that may not include the newer markers.
+            count += 1
+            saw_any_row = True
+
+    return count
 
 
 def write_invoice_rows(filepath, invoice_data, status_callback=None):
@@ -128,9 +298,9 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         csv_file, csv_writer = _get_csv_writer(filepath)
     else:
         wb, ws = get_or_create_workbook(filepath)
-        # Count existing invoices to determine if this invoice should be colored
+        # Count existing invoice groups to determine if this invoice should be colored
         # Even-indexed invoices (0, 2, 4...) get no color, odd-indexed (1, 3, 5...) get gray
-        invoice_index = count_unique_invoices(ws)
+        invoice_index = count_existing_invoice_groups(ws)
         should_color = (invoice_index % 2 == 1)
 
     bill_no = invoice_data.get('invoice_number', '')
@@ -151,6 +321,8 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     line_items = invoice_data.get('line_items', [])
     shipping_cost = invoice_data.get('shipping_cost', '')
+    is_stock_order = bool(invoice_data.get('stock_order'))
+    stock_order_description = str(invoice_data.get('stock_order_description') or 'STOCK ORDER').strip()
 
     rows_written = 0
 
@@ -158,20 +330,80 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         nonlocal rows_written
         row_num = None
         row_fill = row_data.get('_row_fill')
+        is_sb_delivery_fee = bool(row_data.get('_sb_delivery_fee'))
         if row_fill is None and should_color:
             row_fill = ALT_ROW_FILL
         if is_csv:
             csv_writer.writerow([row_data.get(key, '') for key, _ in COLUMNS])
         else:
+            header_map = _build_header_map(ws)
             row_num = ws.max_row + 1
-            for col_idx, (key, header) in enumerate(COLUMNS, 1):
+            for key, header in COLUMNS:
+                col_idx = header_map.get(str(header).strip().lower())
+                if not col_idx:
+                    col_idx = _resolve_col_by_key(ws, key, create_if_missing=True)
+                    header_map = _build_header_map(ws)
                 value = row_data.get(key, '')
                 cell = ws.cell(row=row_num, column=col_idx, value=value)
                 # Apply alternating color per invoice (not per row)
                 if row_fill:
                     cell.fill = row_fill
+                if is_sb_delivery_fee and key == 'description':
+                    cell.font = cell.font.copy(color=SB_DELIVERY_FEE_FONT_COLOR)
         rows_written += 1
         return row_num
+
+    if is_stock_order:
+        # PPE stock orders intentionally skip detailed line items and totals.
+        stock_context_parts = []
+        if bill_no:
+            stock_context_parts.append(f"Bill No: {bill_no}")
+        if memo:
+            stock_context_parts.append(f"Memo (PO): {memo}")
+        if stock_context_parts:
+            stock_order_description = (
+                f"{stock_order_description} | {' | '.join(stock_context_parts)}"
+            )
+
+        row_data = {
+            'bill_no': bill_no,
+            'vendor': vendor,
+            'mailing_address': mailing_address,
+            'terms': terms,
+            'bill_date': bill_date,
+            'due_date': due_date,
+            'location': '',
+            'memo': memo,
+            'type': TYPE_CATEGORY,
+            'category': '',
+            'product_service': '',
+            'sku': '',
+            'qty': '',
+            'rate': '',
+            'description': stock_order_description,
+            'amount': '',
+            'billable': '',
+            'customer_project': customer,
+            'tax_rate': '',
+            'class_field': '',
+            '_row_fill': PPE_STOCK_ORDER_FILL,
+        }
+        first_row_num = _write_row(row_data)
+        source_path = invoice_data.get('source_path') or ''
+        if (not is_csv) and first_row_num and bill_no and source_path:
+            try:
+                link_cell = ws.cell(row=first_row_num, column=1)
+                link_cell.hyperlink = source_path
+            except Exception:
+                pass
+
+        if is_csv:
+            if csv_file:
+                csv_file.close()
+        else:
+            wb.save(filepath)
+        cb(f"  Written {rows_written} row(s) to spreadsheet for invoice {bill_no}", "success")
+        return rows_written
 
     # Write first row with full invoice header + first line item (if any)
 
@@ -248,7 +480,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     first_is_core = _is_core(first_item)
     first_is_ere = _is_ere(first_item)
     first_category = FREIGHT_CATEGORY if first_is_freight else PURCHASES_CATEGORY
-    first_type = TYPE_ITEM if first_item else TYPE_CATEGORY
+    first_type = TYPE_CATEGORY if (first_item and first_is_freight) else (TYPE_ITEM if first_item else TYPE_CATEGORY)
     if first_item:
         first_product_service = _product_service_for_item(first_item, first_is_discount, first_is_core, first_is_ere, first_is_freight)
         first_sku = _sku_for_item(first_item)
@@ -279,6 +511,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     }
     if first_item and first_item.get('sb_delivery_fee'):
         row_data['_row_fill'] = SB_DELIVERY_FEE_FILL
+        row_data['_sb_delivery_fee'] = True
 
     first_row_num = _write_row(row_data)
     source_path = invoice_data.get('source_path') or ''
@@ -305,7 +538,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'due_date': shared_invoice_fields['due_date'],
             'location': '',
             'memo': '',
-            'type': TYPE_ITEM,
+            'type': TYPE_CATEGORY if is_freight else TYPE_ITEM,
             'category': category,
             'product_service': _product_service_for_item(item, is_discount, is_core, is_ere, is_freight),
             'sku': _sku_for_item(item),
@@ -320,6 +553,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         }
         if item.get('sb_delivery_fee'):
             row_data['_row_fill'] = SB_DELIVERY_FEE_FILL
+            row_data['_sb_delivery_fee'] = True
 
         _write_row(row_data)
 
@@ -427,11 +661,15 @@ def read_spreadsheet_rows(filepath):
 
     wb = load_workbook(filepath)
     ws = wb.active
+    header_map = _build_header_map(ws)
 
     rows = []
     for row_num in range(2, ws.max_row + 1):  # Skip header
         row_data = {'_row_num': row_num}
-        for col_idx, (key, header) in enumerate(COLUMNS, 1):
+        for key, header in COLUMNS:
+            col_idx = header_map.get(str(header).strip().lower())
+            if not col_idx:
+                col_idx = _preferred_col_for_key(key)
             row_data[key] = ws.cell(row=row_num, column=col_idx).value or ''
         rows.append(row_data)
 
@@ -439,25 +677,58 @@ def read_spreadsheet_rows(filepath):
 
 
 def _ensure_validation_headers(ws):
-    """Ensure validation header columns exist in the worksheet."""
-    if ws.cell(row=1, column=VALIDATION_COL).value != 'SkuNexus Validation':
-        ws.cell(row=1, column=VALIDATION_COL, value='SkuNexus Validation')
-        ws.cell(row=1, column=VALIDATION_COL).font = ws.cell(row=1, column=VALIDATION_COL).font.copy(bold=True)
-    if ws.cell(row=1, column=FAILED_FIELDS_COL).value != 'SkuNexus Failed Fields':
-        ws.cell(row=1, column=FAILED_FIELDS_COL, value='SkuNexus Failed Fields')
-        ws.cell(row=1, column=FAILED_FIELDS_COL).font = ws.cell(row=1, column=FAILED_FIELDS_COL).font.copy(bold=True)
+    """Ensure validation/margin headers exist and return their column indices."""
+    margin_col = _resolve_col_by_key(ws, 'skunexus_margin', create_if_missing=True)
+    validation_col = _resolve_col_by_key(ws, 'skunexus_validation', create_if_missing=True)
+    failed_col = _resolve_col_by_key(ws, 'skunexus_failed_fields', create_if_missing=True)
+    shopify_core_col = _resolve_col_by_key(ws, 'shopify_core', create_if_missing=True)
+    return margin_col, validation_col, failed_col, shopify_core_col
 
 
-def _apply_validation_to_ws(ws, row_num, is_valid, failed_fields):
+def _set_cell_horizontal_alignment(cell, horizontal):
+    align = copy(cell.alignment)
+    align.horizontal = horizontal
+    cell.alignment = align
+
+
+def _normalize_validation_alignment(ws, validation_col):
+    for row_num in range(2, ws.max_row + 1):
+        cell = ws.cell(row=row_num, column=validation_col)
+        value = cell.value
+        if value is None or str(value).strip() == '':
+            continue
+        _set_cell_horizontal_alignment(cell, 'center')
+
+
+def _normalize_margin_alignment(ws, margin_col):
+    for row_num in range(2, ws.max_row + 1):
+        cell = ws.cell(row=row_num, column=margin_col)
+        value = cell.value
+        if value is None or str(value).strip() == '':
+            continue
+        _set_cell_horizontal_alignment(cell, 'center')
+
+
+def _normalize_shopify_core_alignment(ws, shopify_core_col):
+    for row_num in range(2, ws.max_row + 1):
+        cell = ws.cell(row=row_num, column=shopify_core_col)
+        value = cell.value
+        if value is None or str(value).strip() == '':
+            continue
+        _set_cell_horizontal_alignment(cell, 'center')
+
+
+def _apply_validation_to_ws(ws, row_num, validation_col, failed_col, is_valid, failed_fields):
     """Apply validation values to a single row in an open worksheet."""
-    validation_cell = ws.cell(row=row_num, column=VALIDATION_COL)
-    failed_cell = ws.cell(row=row_num, column=FAILED_FIELDS_COL)
+    validation_cell = ws.cell(row=row_num, column=validation_col)
+    failed_cell = ws.cell(row=row_num, column=failed_col)
     if is_valid is None:
         validation_cell.value = ''
         failed_cell.value = ''
     else:
         validation_cell.value = 'Yes' if is_valid else 'No'
         failed_cell.value = ', '.join(failed_fields) if failed_fields else ''
+    _set_cell_horizontal_alignment(validation_cell, 'center')
 
     # Apply alternating color to validation cells (match existing row color)
     first_cell = ws.cell(row=row_num, column=1)
@@ -471,9 +742,86 @@ def _apply_validation_to_ws(ws, row_num, is_valid, failed_fields):
         failed_cell.fill = row_fill
 
 
-def _write_validation_results_csv(filepath, updates):
-    if not updates or not os.path.exists(filepath):
+def _apply_margin_to_ws(ws, row_num, margin_col, margin_value):
+    """Apply margin value and warning fill to one worksheet row."""
+    margin_cell = ws.cell(row=row_num, column=margin_col)
+    _set_cell_horizontal_alignment(margin_cell, 'center')
+
+    # Default fill follows row pattern.
+    first_cell = ws.cell(row=row_num, column=1)
+    if first_cell.fill and first_cell.fill.patternType == 'solid':
+        row_fill = PatternFill(
+            start_color=first_cell.fill.start_color.rgb,
+            end_color=first_cell.fill.end_color.rgb,
+            fill_type='solid'
+        )
+        margin_cell.fill = row_fill
+
+    if margin_value is None or margin_value == '':
+        margin_cell.value = ''
         return
+
+    try:
+        margin_num = float(margin_value)
+    except (ValueError, TypeError):
+        margin_cell.value = str(margin_value)
+        return
+
+    margin_cell.value = round(margin_num, 4)
+    if margin_num < MARGIN_WARNING_THRESHOLD:
+        for col_idx in range(1, ws.max_column + 1):
+            ws.cell(row=row_num, column=col_idx).fill = MARGIN_LOW_FILL
+
+
+def _parse_shopify_core_update(core_update):
+    if isinstance(core_update, dict):
+        value = core_update.get('value', '')
+        status = str(core_update.get('status', '')).strip().lower()
+        return value, status
+    if isinstance(core_update, (tuple, list)):
+        if len(core_update) >= 2:
+            return core_update[0], str(core_update[1] or '').strip().lower()
+        if len(core_update) == 1:
+            return core_update[0], ''
+    return core_update, ''
+
+
+def _apply_shopify_core_to_ws(ws, row_num, shopify_core_col, core_update):
+    core_value, status = _parse_shopify_core_update(core_update)
+    core_cell = ws.cell(row=row_num, column=shopify_core_col)
+    _set_cell_horizontal_alignment(core_cell, 'center')
+
+    # Default fill follows row pattern.
+    first_cell = ws.cell(row=row_num, column=1)
+    if first_cell.fill and first_cell.fill.patternType == 'solid':
+        row_fill = PatternFill(
+            start_color=first_cell.fill.start_color.rgb,
+            end_color=first_cell.fill.end_color.rgb,
+            fill_type='solid'
+        )
+        core_cell.fill = row_fill
+
+    if core_value is None or str(core_value).strip() == '':
+        core_cell.value = ''
+    else:
+        core_cell.value = str(core_value)
+
+    # Row-level warning fills for Shopify CORE checks.
+    fill = None
+    if status == 'missing':
+        fill = SHOPIFY_CORE_MISSING_FILL
+    elif status == 'mismatch':
+        fill = SHOPIFY_CORE_MISMATCH_FILL
+    if fill:
+        for col_idx in range(1, ws.max_column + 1):
+            ws.cell(row=row_num, column=col_idx).fill = fill
+
+
+def _write_validation_results_csv(filepath, updates, margin_updates=None, shopify_core_updates=None):
+    if not updates or not os.path.exists(filepath):
+        # Allow margin-only updates.
+        if (not margin_updates and not shopify_core_updates) or not os.path.exists(filepath):
+            return
 
     with open(filepath, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
@@ -483,11 +831,11 @@ def _write_validation_results_csv(filepath, updates):
     if not headers:
         headers = [header for _, header in COLUMNS]
 
-    for header in ('SkuNexus Validation', 'SkuNexus Failed Fields'):
+    for header in ('SkuNexus Validation', 'SkuNexus Failed Fields', 'SkuNexus Margin', 'Shopify CORE'):
         if header not in headers:
             headers.append(header)
 
-    for row_num, (is_valid, failed_fields) in updates.items():
+    for row_num, (is_valid, failed_fields) in (updates or {}).items():
         idx = row_num - 2  # Convert 1-indexed row number (header is row 1)
         if idx < 0 or idx >= len(rows):
             continue
@@ -500,6 +848,28 @@ def _write_validation_results_csv(filepath, updates):
         rows[idx]['SkuNexus Validation'] = validation_value
         rows[idx]['SkuNexus Failed Fields'] = failed_value
 
+    for row_num, margin_value in (margin_updates or {}).items():
+        idx = row_num - 2
+        if idx < 0 or idx >= len(rows):
+            continue
+        if margin_value is None or margin_value == '':
+            rows[idx]['SkuNexus Margin'] = ''
+            continue
+        try:
+            rows[idx]['SkuNexus Margin'] = f"{float(margin_value):.4f}"
+        except (ValueError, TypeError):
+            rows[idx]['SkuNexus Margin'] = str(margin_value)
+
+    for row_num, core_update in (shopify_core_updates or {}).items():
+        idx = row_num - 2
+        if idx < 0 or idx >= len(rows):
+            continue
+        core_value, _ = _parse_shopify_core_update(core_update)
+        if core_value is None:
+            rows[idx]['Shopify CORE'] = ''
+        else:
+            rows[idx]['Shopify CORE'] = str(core_value)
+
     with open(filepath, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
@@ -507,14 +877,22 @@ def _write_validation_results_csv(filepath, updates):
             writer.writerow({h: row.get(h, '') for h in headers})
 
 
-def _write_validation_results_xlsx(filepath, updates):
-    if not updates:
+def _write_validation_results_xlsx(filepath, updates, margin_updates=None, shopify_core_updates=None):
+    if not updates and not margin_updates and not shopify_core_updates:
         return
     wb = load_workbook(filepath)
     ws = wb.active
-    _ensure_validation_headers(ws)
-    for row_num, (is_valid, failed_fields) in updates.items():
-        _apply_validation_to_ws(ws, row_num, is_valid, failed_fields)
+    _normalize_tail_columns(ws)
+    margin_col, validation_col, failed_col, shopify_core_col = _ensure_validation_headers(ws)
+    for row_num, (is_valid, failed_fields) in (updates or {}).items():
+        _apply_validation_to_ws(ws, row_num, validation_col, failed_col, is_valid, failed_fields)
+    for row_num, margin_value in (margin_updates or {}).items():
+        _apply_margin_to_ws(ws, row_num, margin_col, margin_value)
+    for row_num, core_update in (shopify_core_updates or {}).items():
+        _apply_shopify_core_to_ws(ws, row_num, shopify_core_col, core_update)
+    _normalize_validation_alignment(ws, validation_col)
+    _normalize_margin_alignment(ws, margin_col)
+    _normalize_shopify_core_alignment(ws, shopify_core_col)
     try:
         wb.save(filepath)
     except PermissionError as e:
@@ -524,20 +902,22 @@ def _write_validation_results_xlsx(filepath, updates):
         ) from e
 
 
-def write_validation_results(filepath, updates):
+def write_validation_results(filepath, updates, margin_updates=None, shopify_core_updates=None):
     """Write multiple validation results in one pass.
 
     Args:
         filepath: Path to the spreadsheet
         updates: dict {row_num: (is_valid, failed_fields)}
+        margin_updates: optional dict {row_num: margin_float}
+        shopify_core_updates: optional dict {row_num: (value, status)}
     """
     if _is_csv(filepath):
-        _write_validation_results_csv(filepath, updates)
+        _write_validation_results_csv(filepath, updates, margin_updates, shopify_core_updates)
     else:
-        _write_validation_results_xlsx(filepath, updates)
+        _write_validation_results_xlsx(filepath, updates, margin_updates, shopify_core_updates)
 
 
-def write_validation_result(filepath, row_num, is_valid, failed_fields):
+def write_validation_result(filepath, row_num, is_valid, failed_fields, margin_value=None):
     """Write validation result to a specific row.
 
     Args:
@@ -545,8 +925,12 @@ def write_validation_result(filepath, row_num, is_valid, failed_fields):
         row_num: The row number to update (1-indexed, header is row 1)
         is_valid: Boolean - True for Yes, False for No
         failed_fields: List of field names that failed validation
+        margin_value: Optional SkuNexus margin value for this row
     """
-    write_validation_results(filepath, {row_num: (is_valid, failed_fields)})
+    margin_updates = None
+    if margin_value is not None:
+        margin_updates = {row_num: margin_value}
+    write_validation_results(filepath, {row_num: (is_valid, failed_fields)}, margin_updates)
 
 
 def get_unique_po_numbers(filepath):

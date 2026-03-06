@@ -1,0 +1,15 @@
+{
+  "shop": "your-store.myshopify.com",
+  "client_id": "SHOPIFY_APP_CLIENT_ID",
+  "client_secret": "SHOPIFY_APP_CLIENT_SECRET",
+  "auth_mode": "auto",
+  "scopes": [
+    "read_orders",
+    "read_products",
+    "read_metaobjects"
+  ],
+  "api_version": "2025-10",
+  "callback_host": "127.0.0.1",
+  "callback_port": 8765,
+  "callback_path": "/shopify/callback"
+}
