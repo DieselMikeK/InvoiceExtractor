@@ -9,7 +9,6 @@ shopify_token.json
 # Build artifacts
 build/
 dist/
-*.spec
 __pycache__/
 *.pyc
 *.pyo
