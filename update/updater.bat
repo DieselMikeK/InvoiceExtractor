@@ -9,18 +9,29 @@ echo   Invoice Extractor - Updating
 echo  ============================================
 echo.
 
-REM ROOT_DIR = two levels up from app/update/ (where InvoiceExtractor.exe lives)
+REM --- Paths ---
 set "UPDATE_DIR=%~dp0"
-set "APP_DIR=%UPDATE_DIR%.."
+REM Remove trailing backslash from UPDATE_DIR
+if "%UPDATE_DIR:~-1%"=="\" set "UPDATE_DIR=%UPDATE_DIR:~0,-1%"
+set "APP_DIR=%UPDATE_DIR%\.."
 set "ROOT_DIR=%APP_DIR%\.."
-set "CONFIG_FILE=%APP_DIR%\required\install_config.json"
+set "REQUIRED_DIR=%APP_DIR%\required"
+set "CONFIG_FILE=%REQUIRED_DIR%\install_config.json"
+set "EMBEDDED_PYTHON=%UPDATE_DIR%\python\python.exe"
 set "PYTHON_EXE="
 
 REM --- Wait for main app to close ---
 echo  [*] Waiting for app to close...
 timeout /t 2 /nobreak >nul
 
-REM --- Try to read Python path from config ---
+REM --- Check for our embedded/isolated Python first ---
+if exist "%EMBEDDED_PYTHON%" (
+    set "PYTHON_EXE=%EMBEDDED_PYTHON%"
+    echo  [OK] Using embedded Python: %EMBEDDED_PYTHON%
+    goto :INSTALL_DEPS
+)
+
+REM --- Check config for a previously saved path ---
 if exist "%CONFIG_FILE%" (
     for /f "tokens=2 delims=:, " %%A in ('findstr /i "python_exe" "%CONFIG_FILE%"') do (
         set "CANDIDATE=%%~A"
@@ -29,59 +40,63 @@ if exist "%CONFIG_FILE%" (
     )
 )
 
-REM --- Auto-detect Python if not configured ---
-if not defined PYTHON_EXE (
-    echo  [*] Auto-detecting Python...
-
-    for /d %%D in ("%LOCALAPPDATA%\Python\Python3*") do (
-        if exist "%%D\python.exe" if not defined PYTHON_EXE set "PYTHON_EXE=%%D\python.exe"
-    )
-    for /d %%D in ("%LOCALAPPDATA%\Python\pythoncore*") do (
-        if exist "%%D\python.exe" if not defined PYTHON_EXE set "PYTHON_EXE=%%D\python.exe"
-    )
-    if not defined PYTHON_EXE (
-        for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
-            if exist "%%D\python.exe" if not defined PYTHON_EXE set "PYTHON_EXE=%%D\python.exe"
-        )
-    )
-    if not defined PYTHON_EXE (
-        for /d %%D in ("C:\Python3*") do (
-            if exist "%%D\python.exe" if not defined PYTHON_EXE set "PYTHON_EXE=%%D\python.exe"
-        )
-    )
-    if not defined PYTHON_EXE (
-        where python >nul 2>&1
-        if !errorlevel! == 0 (
-            for /f "delims=" %%P in ('where python 2^>nul') do (
-                if not defined PYTHON_EXE set "PYTHON_EXE=%%P"
-            )
-        )
-    )
-
-    if not defined PYTHON_EXE (
-        powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python was not found on this machine.`n`nPlease install Python 3.10 or newer from python.org, then run the app again.', 'Python Required', 'OK', 'Warning')" >nul 2>&1
-        exit /b 1
-    )
-
-    REM Save config for next time
-    if not exist "%APP_DIR%\required" mkdir "%APP_DIR%\required"
-    (
-        echo {
-        echo   "python_exe": "%PYTHON_EXE:\=\\%",
-        echo   "installed": "%DATE% %TIME%",
-        echo   "repo": "https://github.com/DieselMikeK/InvoiceExtractor"
-        echo }
-    ) > "%CONFIG_FILE%"
-    echo  [OK] Detected and saved Python: %PYTHON_EXE%
+if defined PYTHON_EXE (
+    echo  [OK] Using saved Python: %PYTHON_EXE%
+    goto :INSTALL_DEPS
 )
 
-echo  [OK] Using Python: %PYTHON_EXE%
-
-REM --- Install/update dependencies ---
+REM --- No Python found — download and install isolated Python 3.14 ---
+echo  [*] Setting up isolated Python 3.14 (one-time, ~25MB)...
+echo      This will only happen once.
 echo.
-echo  [*] Installing any new dependencies...
+
+set "PY_INSTALLER_URL=https://www.python.org/ftp/python/3.14.0/python-3.14.0-amd64.exe"
+set "PY_INSTALLER_TMP=%TEMP%\python_installer_3.14.0.exe"
+set "PY_INSTALL_DIR=%UPDATE_DIR%\python"
+
+echo  [*] Downloading Python 3.14.0...
+powershell -Command "Invoke-WebRequest -Uri '%PY_INSTALLER_URL%' -OutFile '%PY_INSTALLER_TMP%'" >nul 2>&1
+if !errorlevel! neq 0 (
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Failed to download Python. Please check your internet connection and try again.', 'Download Failed', 'OK', 'Error')" >nul 2>&1
+    exit /b 1
+)
+echo  [OK] Downloaded.
+
+echo  [*] Installing Python to update\python\ (no admin needed)...
+"%PY_INSTALLER_TMP%" /quiet InstallAllUsers=0 TargetDir="%PY_INSTALL_DIR%" ^
+    Include_pip=1 Include_launcher=0 Include_test=0 Include_doc=0 ^
+    SimpleInstall=1 SimpleInstallDescription="Invoice Extractor Python"
+if !errorlevel! neq 0 (
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installation failed. See update\build_log.txt for details.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
+    exit /b 1
+)
+del "%PY_INSTALLER_TMP%" >nul 2>&1
+
+if not exist "%PY_INSTALL_DIR%\python.exe" (
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installed but python.exe not found. Please contact support.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
+    exit /b 1
+)
+
+set "PYTHON_EXE=%PY_INSTALL_DIR%\python.exe"
+echo  [OK] Python installed at: %PYTHON_EXE%
+
+REM --- Save to config ---
+if not exist "%REQUIRED_DIR%" mkdir "%REQUIRED_DIR%"
+(
+    echo {
+    echo   "python_exe": "%PYTHON_EXE:\=\\%",
+    echo   "installed": "%DATE% %TIME%",
+    echo   "repo": "https://github.com/DieselMikeK/InvoiceExtractor"
+    echo }
+) > "%CONFIG_FILE%"
+
+:INSTALL_DEPS
+echo.
+echo  [*] Installing/updating dependencies...
+"%PYTHON_EXE%" -m pip install --upgrade pip --quiet
 "%PYTHON_EXE%" -m pip install -r "%APP_DIR%\requirements.txt" --quiet
 "%PYTHON_EXE%" -m pip install pyinstaller --quiet
+echo  [OK] Dependencies ready.
 
 REM --- Pull latest source ---
 echo.
@@ -102,9 +117,10 @@ set "ZIP_URL=https://github.com/DieselMikeK/InvoiceExtractor/archive/refs/heads/
 set "ZIP_TMP=%TEMP%\InvoiceExtractor_src.zip"
 set "EXTRACT_TMP=%TEMP%\InvoiceExtractor_src"
 
+echo  [*] Downloading source zip...
 powershell -Command "Invoke-WebRequest -Uri '%ZIP_URL%' -OutFile '%ZIP_TMP%'" >nul 2>&1
 if !errorlevel! neq 0 (
-    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Download failed. Please check your internet connection and try again.', 'Update Failed', 'OK', 'Error')" >nul 2>&1
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Source download failed. Please check your internet connection.', 'Update Failed', 'OK', 'Error')" >nul 2>&1
     exit /b 1
 )
 if exist "%EXTRACT_TMP%" rd /s /q "%EXTRACT_TMP%"
@@ -119,7 +135,7 @@ echo.
 echo  [*] Building new version (1-2 minutes)...
 echo.
 cd /d "%APP_DIR%"
-"%PYTHON_EXE%" -m PyInstaller InvoiceExtractor.spec --noconfirm >"%APP_DIR%\update\build_log.txt" 2>&1
+"%PYTHON_EXE%" -m PyInstaller InvoiceExtractor.spec --noconfirm >"%UPDATE_DIR%\build_log.txt" 2>&1
 if !errorlevel! neq 0 (
     powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Build failed. See app\update\build_log.txt for details.', 'Update Failed', 'OK', 'Error')" >nul 2>&1
     exit /b 1
