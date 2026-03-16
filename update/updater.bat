@@ -35,6 +35,12 @@ if !errorlevel! == 0 (
 )
 echo  [OK] App closed.
 
+REM --- Delete old exe so build can write directly to root ---
+if exist "%ROOT_DIR%\InvoiceExtractor.exe" (
+    del /f /q "%ROOT_DIR%\InvoiceExtractor.exe"
+    echo  [OK] Old exe removed.
+)
+
 REM --- Check for our embedded/isolated Python first ---
 if exist "%EMBEDDED_PYTHON%" (
     set "PYTHON_EXE=%EMBEDDED_PYTHON%"
@@ -146,23 +152,13 @@ echo.
 echo  [*] Building new version (1-2 minutes)...
 echo.
 cd /d "%APP_DIR%"
-"%PYTHON_EXE%" -m PyInstaller InvoiceExtractor.spec --noconfirm >"%UPDATE_DIR%\build_log.txt" 2>&1
+"%PYTHON_EXE%" -m PyInstaller InvoiceExtractor.spec --noconfirm --distpath "%ROOT_DIR%" >"%UPDATE_DIR%\build_log.txt" 2>&1
 if !errorlevel! neq 0 (
     powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Build failed. See app\update\build_log.txt for details.', 'Update Failed', 'OK', 'Error')" >nul 2>&1
     exit /b 1
 )
 
-REM --- Overwrite exe at root ---
-echo  [*] Copying new exe to: %ROOT_DIR%\InvoiceExtractor.exe
-copy /y "%APP_DIR%\dist\InvoiceExtractor.exe" "%ROOT_DIR%\InvoiceExtractor.exe"
-if !errorlevel! neq 0 (
-    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Failed to copy new exe to root. The app may still be running.', 'Update Failed', 'OK', 'Error')" >nul 2>&1
-    exit /b 1
-)
-echo  [OK] Exe copied successfully.
-
-REM --- Clean up PyInstaller build artifacts ---
-if exist "%APP_DIR%\dist" rd /s /q "%APP_DIR%\dist" >nul 2>&1
+REM --- Clean up PyInstaller build folder ---
 if exist "%APP_DIR%\build" rd /s /q "%APP_DIR%\build" >nul 2>&1
 
 REM --- Clean up any leftover zip files in root ---
