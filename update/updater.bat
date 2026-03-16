@@ -20,9 +20,15 @@ set "CONFIG_FILE=%REQUIRED_DIR%\install_config.json"
 set "EMBEDDED_PYTHON=%UPDATE_DIR%\python\python.exe"
 set "PYTHON_EXE="
 
-REM --- Wait for main app to close ---
+REM --- Wait for main app process to fully exit ---
 echo  [*] Waiting for app to close...
-timeout /t 2 /nobreak >nul
+:WAIT_LOOP
+tasklist /fi "imagename eq InvoiceExtractor.exe" 2>nul | find /i "InvoiceExtractor.exe" >nul
+if !errorlevel! == 0 (
+    timeout /t 1 /nobreak >nul
+    goto :WAIT_LOOP
+)
+echo  [OK] App closed.
 
 REM --- Check for our embedded/isolated Python first ---
 if exist "%EMBEDDED_PYTHON%" (
