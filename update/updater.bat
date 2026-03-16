@@ -97,20 +97,12 @@ if !errorlevel! neq 0 (
 )
 del "%PY_INSTALLER_TMP%" >nul 2>&1
 
-if not exist "%PY_INSTALL_DIR%\python.exe" (
-    REM Installer may have placed it one level deeper — search for it
-    for /r "%PY_INSTALL_DIR%" %%F in (python.exe) do (
-        if not defined PYTHON_EXE set "PYTHON_EXE=%%F"
-    )
-    if not defined PYTHON_EXE (
-        powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installed but python.exe not found. Please delete app\update\python\ and try again, or contact support.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
-        exit /b 1
-    )
-    echo  [OK] Found python.exe at: !PYTHON_EXE!
-) else (
-    set "PYTHON_EXE=%PY_INSTALL_DIR%\python.exe"
+set "PYTHON_EXE=%PY_INSTALL_DIR%\python.exe"
+if not exist "!PYTHON_EXE!" (
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installed but python.exe not found. Please delete app\update\python\ and try again.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
+    exit /b 1
 )
-echo  [OK] Python installed at: %PYTHON_EXE%
+echo  [OK] Python installed at: !PYTHON_EXE!
 
 REM --- Save to config ---
 if not exist "%REQUIRED_DIR%" mkdir "%REQUIRED_DIR%"
