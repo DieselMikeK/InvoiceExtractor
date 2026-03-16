@@ -51,7 +51,7 @@ from spreadsheet_writer import (
 from skunexus_client import SkuNexusClient, validate_po_row
 from shopify_client import ShopifyClient
 
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.8"
 GITHUB_REPO = "DieselMikeK/InvoiceExtractor"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
@@ -1037,6 +1037,17 @@ class InvoiceExtractorGUI:
                 self.header_current_width = self.header_base_width
             except Exception:
                 self.header_image = None
+
+        # Version label — top right corner
+        version_label = tk.Label(
+            main_frame,
+            text=f"v{APP_VERSION}",
+            font=('Segoe UI', 8),
+            fg='#888888',
+            bg=self.root.cget('bg'),
+            anchor='e'
+        )
+        version_label.place(relx=1.0, y=0, anchor='ne')
 
         # Fallback title text if image isn't available
         if self.header_label is None:

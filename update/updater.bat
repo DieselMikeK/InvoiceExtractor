@@ -82,7 +82,7 @@ echo  [OK] Downloaded.
 echo  [*] Installing Python to update\python\ (no admin needed)...
 "%PY_INSTALLER_TMP%" /quiet InstallAllUsers=0 TargetDir="%PY_INSTALL_DIR%" ^
     Include_pip=1 Include_launcher=0 Include_test=0 Include_doc=0 ^
-    SimpleInstall=1 SimpleInstallDescription="Invoice Extractor Python"
+    Include_tcltk=1
 if !errorlevel! neq 0 (
     powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installation failed. See update\build_log.txt for details.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
     exit /b 1
