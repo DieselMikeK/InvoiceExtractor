@@ -43,9 +43,16 @@ if exist "%ROOT_DIR%\InvoiceExtractor.exe" (
 
 REM --- Check for our embedded/isolated Python first ---
 if exist "%EMBEDDED_PYTHON%" (
-    set "PYTHON_EXE=%EMBEDDED_PYTHON%"
-    echo  [OK] Using embedded Python: %EMBEDDED_PYTHON%
-    goto :INSTALL_DEPS
+    REM Verify tkinter is available — if not, wipe and reinstall
+    "%EMBEDDED_PYTHON%" -c "import tkinter" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo  [!] Embedded Python missing tkinter — reinstalling...
+        rd /s /q "%PY_INSTALL_DIR%" >nul 2>&1
+    ) else (
+        set "PYTHON_EXE=%EMBEDDED_PYTHON%"
+        echo  [OK] Using embedded Python: %EMBEDDED_PYTHON%
+        goto :INSTALL_DEPS
+    )
 )
 
 REM --- Check config for a previously saved path ---
