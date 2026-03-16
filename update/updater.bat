@@ -21,6 +21,7 @@ set "ROOT_DIR=%CD%"
 popd
 set "REQUIRED_DIR=%APP_DIR%\required"
 set "CONFIG_FILE=%REQUIRED_DIR%\install_config.json"
+set "PY_INSTALL_DIR=%UPDATE_DIR%\python"
 set "EMBEDDED_PYTHON=%UPDATE_DIR%\python\python.exe"
 set "PYTHON_EXE="
 echo  [*] ROOT_DIR resolved to: %ROOT_DIR%
@@ -124,9 +125,9 @@ if not exist "%REQUIRED_DIR%" mkdir "%REQUIRED_DIR%"
 :INSTALL_DEPS
 echo.
 echo  [*] Installing/updating dependencies...
-"%PYTHON_EXE%" -m pip install --upgrade pip --quiet
-"%PYTHON_EXE%" -m pip install -r "%APP_DIR%\requirements.txt" --quiet
-"%PYTHON_EXE%" -m pip install pyinstaller --quiet
+"!PYTHON_EXE!" -m pip install --upgrade pip --quiet
+"!PYTHON_EXE!" -m pip install -r "%APP_DIR%\requirements.txt" --quiet
+"!PYTHON_EXE!" -m pip install pyinstaller --quiet
 echo  [OK] Dependencies ready.
 
 REM --- Pull latest source ---
@@ -166,7 +167,7 @@ echo.
 echo  [*] Building new version (1-2 minutes)...
 echo.
 cd /d "%APP_DIR%"
-"%PYTHON_EXE%" -m PyInstaller InvoiceExtractor.spec --noconfirm --distpath "%ROOT_DIR%" >"%UPDATE_DIR%\build_log.txt" 2>&1
+"!PYTHON_EXE!" -m PyInstaller InvoiceExtractor.spec --noconfirm --distpath "%ROOT_DIR%" >"%UPDATE_DIR%\build_log.txt" 2>&1
 if !errorlevel! neq 0 (
     powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Build failed. See app\update\build_log.txt for details.', 'Update Failed', 'OK', 'Error')" >nul 2>&1
     exit /b 1
@@ -182,5 +183,5 @@ echo  [OK] Update complete!
 
 REM --- Relaunch ---
 echo  [*] Relaunching Invoice Extractor...
-start "" "%ROOT_DIR%\InvoiceExtractor.exe"
+start "" "!ROOT_DIR!\InvoiceExtractor.exe"
 exit

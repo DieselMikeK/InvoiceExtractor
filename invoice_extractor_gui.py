@@ -51,7 +51,7 @@ from spreadsheet_writer import (
 from skunexus_client import SkuNexusClient, validate_po_row
 from shopify_client import ShopifyClient
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 GITHUB_REPO = "DieselMikeK/InvoiceExtractor"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
