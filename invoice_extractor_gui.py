@@ -19,8 +19,6 @@ import ctypes
 import shutil
 import urllib.request
 import urllib.error
-import zipfile
-import tempfile
 import subprocess
 from datetime import datetime, timedelta
 from openpyxl import load_workbook
@@ -354,15 +352,10 @@ class InvoiceExtractorGUI:
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
             latest_tag = data.get('tag_name', '').lstrip('v')
-            download_url = None
-            for asset in data.get('assets', []):
-                if asset.get('name', '').endswith('.zip'):
-                    download_url = asset.get('browser_download_url')
-                    break
-            if not latest_tag or not download_url:
+            if not latest_tag:
                 return
             if self._version_tuple(latest_tag) > self._version_tuple(APP_VERSION):
-                self.root.after(0, lambda: self._show_update_banner(latest_tag, download_url))
+                self.root.after(0, lambda: self._show_update_banner(latest_tag))
         except Exception:
             pass  # Silently ignore — no internet, timeout, etc.
 
@@ -372,7 +365,7 @@ class InvoiceExtractorGUI:
         except Exception:
             return (0,)
 
-    def _show_update_banner(self, latest_version, download_url):
+    def _show_update_banner(self, latest_version):
         """Show a non-intrusive update banner below the header."""
         if self._update_banner:
             return
@@ -391,7 +384,7 @@ class InvoiceExtractorGUI:
             bg='#145228', fg='white',
             font=('Segoe UI', 9, 'bold'),
             relief='flat', cursor='hand2',
-            command=lambda: self._do_update(latest_version, download_url)
+            command=lambda: self._do_update(latest_version)
         )
         btn.pack(side=tk.LEFT, padx=4)
         dismiss = tk.Button(
@@ -405,41 +398,21 @@ class InvoiceExtractorGUI:
         dismiss.pack(side=tk.RIGHT, padx=8)
         self._update_banner = banner
 
-    def _do_update(self, latest_version, download_url):
-        """Download the update zip and launch updater.bat to replace the exe."""
-        self._update_banner.destroy()
-        self._update_banner = None
-        progress_win = tk.Toplevel(self.root)
-        progress_win.title("Updating...")
-        progress_win.geometry("350x100")
-        progress_win.resizable(False, False)
-        progress_win.grab_set()
-        tk.Label(progress_win, text=f"Downloading v{latest_version}...", font=('Segoe UI', 10)).pack(pady=(18, 6))
-        bar = ttk.Progressbar(progress_win, mode='indeterminate', length=280)
-        bar.pack()
-        bar.start(10)
-
-        def _download():
-            try:
-                tmp_zip = os.path.join(tempfile.gettempdir(), 'InvoiceExtractor_update.zip')
-                urllib.request.urlretrieve(download_url, tmp_zip)
-                # Extract next to the exe
-                exe_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
-                with zipfile.ZipFile(tmp_zip, 'r') as z:
-                    z.extractall(exe_dir)
-                os.remove(tmp_zip)
-                # Launch updater.bat (handles replacing the running exe)
-                updater = os.path.join(exe_dir, 'updater.bat')
-                if os.path.exists(updater):
-                    subprocess.Popen(['cmd', '/c', updater], creationflags=subprocess.CREATE_NEW_CONSOLE)
-                self.root.after(0, lambda: (progress_win.destroy(), self.root.destroy()))
-            except Exception as e:
-                self.root.after(0, lambda: (
-                    progress_win.destroy(),
-                    tk.messagebox.showerror("Update Failed", str(e))
-                ))
-
-        threading.Thread(target=_download, daemon=True).start()
+    def _do_update(self, latest_version):
+        """Launch updater.bat which pulls latest source and rebuilds the exe."""
+        if self._update_banner:
+            self._update_banner.destroy()
+            self._update_banner = None
+        exe_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
+        # updater.bat sits next to the exe (one level up from app/ when frozen)
+        updater = os.path.join(exe_dir, 'updater.bat')
+        if not os.path.exists(updater):
+            updater = os.path.join(os.path.dirname(exe_dir), 'updater.bat')
+        if not os.path.exists(updater):
+            tk.messagebox.showerror("Update Failed", "updater.bat not found next to InvoiceExtractor.exe.")
+            return
+        subprocess.Popen(['cmd', '/c', updater], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        self.root.destroy()
 
     def _get_next_run_paths(self):
         """Pick the next available output file and invoices folder (same suffix)."""
