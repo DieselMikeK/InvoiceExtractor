@@ -9,16 +9,21 @@ echo   Invoice Extractor - Updating
 echo  ============================================
 echo.
 
-REM --- Paths ---
-set "UPDATE_DIR=%~dp0"
-REM Remove trailing backslash from UPDATE_DIR
-if "%UPDATE_DIR:~-1%"=="\" set "UPDATE_DIR=%UPDATE_DIR:~0,-1%"
-set "APP_DIR=%UPDATE_DIR%\.."
-set "ROOT_DIR=%APP_DIR%\.."
+REM --- Resolve all paths to absolute ---
+pushd "%~dp0"
+set "UPDATE_DIR=%CD%"
+popd
+pushd "%~dp0\.."
+set "APP_DIR=%CD%"
+popd
+pushd "%~dp0\..\.."
+set "ROOT_DIR=%CD%"
+popd
 set "REQUIRED_DIR=%APP_DIR%\required"
 set "CONFIG_FILE=%REQUIRED_DIR%\install_config.json"
 set "EMBEDDED_PYTHON=%UPDATE_DIR%\python\python.exe"
 set "PYTHON_EXE="
+echo  [*] ROOT_DIR resolved to: %ROOT_DIR%
 
 REM --- Wait for main app process to fully exit ---
 echo  [*] Waiting for app to close...
@@ -148,7 +153,13 @@ if !errorlevel! neq 0 (
 )
 
 REM --- Overwrite exe at root ---
-copy /y "%APP_DIR%\dist\InvoiceExtractor.exe" "%ROOT_DIR%\InvoiceExtractor.exe" >nul
+echo  [*] Copying new exe to: %ROOT_DIR%\InvoiceExtractor.exe
+copy /y "%APP_DIR%\dist\InvoiceExtractor.exe" "%ROOT_DIR%\InvoiceExtractor.exe"
+if !errorlevel! neq 0 (
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Failed to copy new exe to root. The app may still be running.', 'Update Failed', 'OK', 'Error')" >nul 2>&1
+    exit /b 1
+)
+echo  [OK] Exe copied successfully.
 
 REM --- Clean up PyInstaller build artifacts ---
 if exist "%APP_DIR%\dist" rd /s /q "%APP_DIR%\dist" >nul 2>&1
