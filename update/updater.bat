@@ -45,13 +45,13 @@ if defined PYTHON_EXE (
     goto :INSTALL_DEPS
 )
 
-REM --- No Python found — download and install isolated Python 3.14 ---
-echo  [*] Setting up isolated Python 3.14 (one-time, ~25MB)...
+REM --- No Python found — download and install isolated Python 3.12 (PyInstaller stable) ---
+echo  [*] Setting up isolated Python 3.12 (one-time, ~25MB)...
 echo      This will only happen once.
 echo.
 
-set "PY_INSTALLER_URL=https://www.python.org/ftp/python/3.14.0/python-3.14.0-amd64.exe"
-set "PY_INSTALLER_TMP=%TEMP%\python_installer_3.14.0.exe"
+set "PY_INSTALLER_URL=https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
+set "PY_INSTALLER_TMP=%TEMP%\python_installer_3.12.9.exe"
 set "PY_INSTALL_DIR=%UPDATE_DIR%\python"
 
 echo  [*] Downloading Python 3.14.0...
