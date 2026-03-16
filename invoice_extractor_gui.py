@@ -17,6 +17,11 @@ import tkinter.font as tkfont
 import time
 import ctypes
 import shutil
+import urllib.request
+import urllib.error
+import zipfile
+import tempfile
+import subprocess
 from datetime import datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -47,6 +52,10 @@ from spreadsheet_writer import (
 )
 from skunexus_client import SkuNexusClient, validate_po_row
 from shopify_client import ShopifyClient
+
+APP_VERSION = "1.0.0"
+GITHUB_REPO = "DieselMikeK/InvoiceExtractor"
+GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 # Batch export settings (easy to change)
 # QuickBooks import appears to cap CSV files at ~100 total lines.
@@ -328,6 +337,109 @@ class InvoiceExtractorGUI:
         self._calendar_suppress_until = 0.0
 
         self.build_ui()
+        self._update_banner = None
+        self.root.after(2000, self._check_for_update_async)
+
+    def _check_for_update_async(self):
+        """Kick off update check in background thread so it never blocks the UI."""
+        threading.Thread(target=self._check_for_update, daemon=True).start()
+
+    def _check_for_update(self):
+        """Check GitHub releases for a newer version and show banner if found."""
+        try:
+            req = urllib.request.Request(
+                GITHUB_API_URL,
+                headers={'User-Agent': 'InvoiceExtractor-UpdateCheck'}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+            latest_tag = data.get('tag_name', '').lstrip('v')
+            download_url = None
+            for asset in data.get('assets', []):
+                if asset.get('name', '').endswith('.zip'):
+                    download_url = asset.get('browser_download_url')
+                    break
+            if not latest_tag or not download_url:
+                return
+            if self._version_tuple(latest_tag) > self._version_tuple(APP_VERSION):
+                self.root.after(0, lambda: self._show_update_banner(latest_tag, download_url))
+        except Exception:
+            pass  # Silently ignore — no internet, timeout, etc.
+
+    def _version_tuple(self, version_str):
+        try:
+            return tuple(int(x) for x in version_str.split('.'))
+        except Exception:
+            return (0,)
+
+    def _show_update_banner(self, latest_version, download_url):
+        """Show a non-intrusive update banner below the header."""
+        if self._update_banner:
+            return
+        banner = tk.Frame(self.root, bg='#1a6b3a', pady=4)
+        banner.place(relx=0, rely=0, relwidth=1, anchor='nw')
+        msg = tk.Label(
+            banner,
+            text=f"  Update available: v{latest_version}  —  You have v{APP_VERSION}",
+            bg='#1a6b3a', fg='white',
+            font=('Segoe UI', 9)
+        )
+        msg.pack(side=tk.LEFT, padx=(8, 4))
+        btn = tk.Button(
+            banner,
+            text="Update Now",
+            bg='#145228', fg='white',
+            font=('Segoe UI', 9, 'bold'),
+            relief='flat', cursor='hand2',
+            command=lambda: self._do_update(latest_version, download_url)
+        )
+        btn.pack(side=tk.LEFT, padx=4)
+        dismiss = tk.Button(
+            banner,
+            text="✕",
+            bg='#1a6b3a', fg='white',
+            font=('Segoe UI', 9),
+            relief='flat', cursor='hand2',
+            command=lambda: (banner.place_forget(), setattr(self, '_update_banner', None))
+        )
+        dismiss.pack(side=tk.RIGHT, padx=8)
+        self._update_banner = banner
+
+    def _do_update(self, latest_version, download_url):
+        """Download the update zip and launch updater.bat to replace the exe."""
+        self._update_banner.destroy()
+        self._update_banner = None
+        progress_win = tk.Toplevel(self.root)
+        progress_win.title("Updating...")
+        progress_win.geometry("350x100")
+        progress_win.resizable(False, False)
+        progress_win.grab_set()
+        tk.Label(progress_win, text=f"Downloading v{latest_version}...", font=('Segoe UI', 10)).pack(pady=(18, 6))
+        bar = ttk.Progressbar(progress_win, mode='indeterminate', length=280)
+        bar.pack()
+        bar.start(10)
+
+        def _download():
+            try:
+                tmp_zip = os.path.join(tempfile.gettempdir(), 'InvoiceExtractor_update.zip')
+                urllib.request.urlretrieve(download_url, tmp_zip)
+                # Extract next to the exe
+                exe_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
+                with zipfile.ZipFile(tmp_zip, 'r') as z:
+                    z.extractall(exe_dir)
+                os.remove(tmp_zip)
+                # Launch updater.bat (handles replacing the running exe)
+                updater = os.path.join(exe_dir, 'updater.bat')
+                if os.path.exists(updater):
+                    subprocess.Popen(['cmd', '/c', updater], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                self.root.after(0, lambda: (progress_win.destroy(), self.root.destroy()))
+            except Exception as e:
+                self.root.after(0, lambda: (
+                    progress_win.destroy(),
+                    tk.messagebox.showerror("Update Failed", str(e))
+                ))
+
+        threading.Thread(target=_download, daemon=True).start()
 
     def _get_next_run_paths(self):
         """Pick the next available output file and invoices folder (same suffix)."""
