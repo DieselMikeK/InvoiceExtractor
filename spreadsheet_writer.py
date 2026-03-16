@@ -1,17 +1,30 @@
 """Spreadsheet writer: writes parsed invoice data to QuickBooks-compatible CSV/Excel format."""
 import csv
 import os
+import re
 from copy import copy
+from datetime import date, datetime
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
+
+try:
+    from core_detection import is_core_candidate
+except ImportError:
+    from app.core_detection import is_core_candidate
+
+try:
+    from invoice_parser import get_vendor_default_terms
+except ImportError:
+    from app.invoice_parser import get_vendor_default_terms
 
 # Alternating row background color
 ALT_ROW_FILL = PatternFill(start_color="EAEAEA", end_color="EAEAEA", fill_type="solid")
 SB_DELIVERY_FEE_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 PPE_STOCK_ORDER_FILL = PatternFill(start_color="D8B4FE", end_color="D8B4FE", fill_type="solid")
+SKUNEXUS_FAILED_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 MARGIN_LOW_FILL = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
 SHOPIFY_CORE_MISSING_FILL = PatternFill(start_color="FFFF6666", end_color="FFFF6666", fill_type="solid")
-SHOPIFY_CORE_MISMATCH_FILL = PatternFill(start_color="FFFFC000", end_color="FFFFC000", fill_type="solid")
+SHOPIFY_CORE_MISMATCH_FILL = PatternFill(start_color="FFDDEBF7", end_color="FFDDEBF7", fill_type="solid")
 SB_DELIVERY_FEE_FONT_COLOR = "FFFF0000"
 
 
@@ -61,6 +74,65 @@ TYPE_ITEM = 'Item Details'
 
 def _is_csv(filepath):
     return str(filepath).lower().endswith('.csv')
+
+
+def _format_export_date(value):
+    if value is None or value == '':
+        return ''
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        parsed = datetime.combine(value, datetime.min.time())
+    else:
+        text = str(value).strip()
+        if not text:
+            return ''
+        parsed = None
+        for fmt in (
+            '%m/%d/%Y',
+            '%m/%d/%y',
+            '%m-%d-%Y',
+            '%m-%d-%y',
+            '%Y-%m-%d',
+            '%Y/%m/%d',
+        ):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+        if parsed is None:
+            return text
+    return f"{parsed.month}/{parsed.day}/{parsed.year}"
+
+
+def _normalize_export_terms(value):
+    text = re.sub(r'\s+', ' ', str(value or '').strip())
+    if not text:
+        return ''
+
+    collapsed = re.sub(r'[^a-z0-9]+', '', text.lower())
+    if collapsed == 'dueuponreceipt':
+        return 'Due Upon Receipt'
+
+    if collapsed == 'creditcardbulkbill':
+        return 'Credit Card'
+
+    if collapsed == 'creditcard':
+        return 'Credit Card'
+
+    match = re.fullmatch(r'n(?:et)?(\d+)', collapsed)
+    if match:
+        return f"Net {int(match.group(1))}"
+
+    match = re.fullmatch(r'n(?:et)?(\d+)th(?:prox)?', collapsed)
+    if match:
+        return f"Net {int(match.group(1))}th"
+
+    if collapsed == 'net10thprox':
+        return 'Net 10th'
+
+    return text
 
 
 def _header_for_key(key):
@@ -306,9 +378,11 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     bill_no = invoice_data.get('invoice_number', '')
     vendor = invoice_data.get('vendor', '')
     mailing_address = invoice_data.get('vendor_address', '')
-    terms = invoice_data.get('terms', '')
-    bill_date = invoice_data.get('date', '')
-    due_date = invoice_data.get('due_date', '')
+    terms = _normalize_export_terms(
+        get_vendor_default_terms(invoice_data.get('vendor', '')) or invoice_data.get('terms', '')
+    )
+    bill_date = _format_export_date(invoice_data.get('date', ''))
+    due_date = _format_export_date(invoice_data.get('due_date', ''))
     memo = invoice_data.get('po_number', '')
     customer = invoice_data.get('customer', '')
     total_amount = invoice_data.get('total', '')
@@ -428,10 +502,16 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         item_num = str(item.get('item_number', '')).lower()
         desc = str(item.get('description', '')).lower()
         return bool(item.get('is_discount')) or ('discount' in item_num) or ('discount' in desc)
+    def _item_export_override(item, key):
+        value = item.get(key)
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
     def _is_core(item):
         item_num = str(item.get('item_number', '')).lower()
         desc = str(item.get('description', '')).lower()
-        return item_num == 'core' or item_num.startswith('core ') or item_num.startswith('core-') or desc.startswith('core ')
+        return is_core_candidate('', item_num, desc)
     def _is_ere(item):
         item_num = str(item.get('item_number', '')).lower().strip()
         desc = str(item.get('description', '')).lower()
@@ -445,25 +525,45 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         if 'ship' in s:
             return 'Shipping'
         return 'Shipping'
+    def _row_category_for_item(item, is_freight):
+        override = _item_export_override(item, 'qb_category_override')
+        if override:
+            return override
+        if not is_freight:
+            return PURCHASES_CATEGORY
+        shipping_label = _normalize_shipping_label(item.get('description') or item.get('item_number'))
+        if shipping_label == 'Drop Ship':
+            return PURCHASES_CATEGORY
+        return FREIGHT_CATEGORY
+    def _row_type_for_item(item, is_freight):
+        override = _item_export_override(item, 'qb_type_override')
+        if override:
+            return override
+        if not is_freight:
+            return TYPE_ITEM
+        return TYPE_CATEGORY
     def _core_description(item):
         code = str(item.get('item_number', '')).strip()
         desc = str(item.get('description', '')).strip()
-        if code and desc:
-            if code.lower() in desc.lower():
-                return desc
-            return f"{code} {desc}".strip()
-        return code or desc
+        if desc:
+            return desc
+        return code
     def _product_service_for_item(item, is_discount, is_core, is_ere, is_freight):
+        override = _item_export_override(item, 'qb_product_service_override')
+        if override:
+            return override
         if is_discount:
             return 'DPP Discount'
-        if is_core:
-            return 'Core'
-        if is_ere:
-            return 'E.R.E.'
         if is_freight:
-            return _normalize_shipping_label(item.get('description') or item.get('item_number'))
+            shipping_label = _normalize_shipping_label(item.get('description') or item.get('item_number'))
+            if shipping_label == 'Drop Ship':
+                return 'Drop Ship'
+            return shipping_label
         return 'Inventory Item (Sellable Item)'
     def _sku_for_item(item):
+        override = _item_export_override(item, 'qb_sku_override')
+        if override:
+            return override
         return str(item.get('item_number', '')).strip()
     def _description_for_item(item, is_discount, is_core, is_freight):
         if is_core:
@@ -479,8 +579,8 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     first_is_discount = _is_discount(first_item)
     first_is_core = _is_core(first_item)
     first_is_ere = _is_ere(first_item)
-    first_category = FREIGHT_CATEGORY if first_is_freight else PURCHASES_CATEGORY
-    first_type = TYPE_CATEGORY if (first_item and first_is_freight) else (TYPE_ITEM if first_item else TYPE_CATEGORY)
+    first_category = _row_category_for_item(first_item, first_is_freight) if first_item else ''
+    first_type = _row_type_for_item(first_item, first_is_freight) if first_item else TYPE_CATEGORY
     if first_item:
         first_product_service = _product_service_for_item(first_item, first_is_discount, first_is_core, first_is_ere, first_is_freight)
         first_sku = _sku_for_item(first_item)
@@ -528,7 +628,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         is_discount = _is_discount(item)
         is_core = _is_core(item)
         is_ere = _is_ere(item)
-        category = FREIGHT_CATEGORY if is_freight else PURCHASES_CATEGORY
+        category = _row_category_for_item(item, is_freight)
         row_data = {
             'bill_no': shared_invoice_fields['bill_no'],
             'vendor': shared_invoice_fields['vendor'],
@@ -538,7 +638,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'due_date': shared_invoice_fields['due_date'],
             'location': '',
             'memo': '',
-            'type': TYPE_CATEGORY if is_freight else TYPE_ITEM,
+            'type': _row_type_for_item(item, is_freight),
             'category': category,
             'product_service': _product_service_for_item(item, is_discount, is_core, is_ere, is_freight),
             'sku': _sku_for_item(item),
@@ -569,6 +669,11 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     shipping_rate = shipping_cost if shipping_val > 0 else '0'
     shipping_desc = invoice_data.get('shipping_description', 'Shipping')
     shipping_label = _normalize_shipping_label(shipping_desc)
+    shipping_category = PURCHASES_CATEGORY if shipping_label == 'Drop Ship' else FREIGHT_CATEGORY
+    shipping_type = TYPE_CATEGORY
+    shipping_product_service = (
+        'Drop Ship' if shipping_label == 'Drop Ship' else shipping_label
+    )
 
     if (not has_freight_item) and (shipping_rate or shipping_desc):
         row_data = {
@@ -580,9 +685,9 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'due_date': shared_invoice_fields['due_date'],
             'location': '',
             'memo': '',
-            'type': TYPE_CATEGORY,
-            'category': FREIGHT_CATEGORY,
-            'product_service': shipping_label,
+            'type': shipping_type,
+            'category': shipping_category,
+            'product_service': shipping_product_service,
             'sku': '',
             'qty': '',
             'rate': shipping_rate,
@@ -741,6 +846,10 @@ def _apply_validation_to_ws(ws, row_num, validation_col, failed_col, is_valid, f
         validation_cell.fill = row_fill
         failed_cell.fill = row_fill
 
+    if is_valid is False:
+        for col_idx in range(1, ws.max_column + 1):
+            ws.cell(row=row_num, column=col_idx).fill = SKUNEXUS_FAILED_FILL
+
 
 def _apply_margin_to_ws(ws, row_num, margin_col, margin_value):
     """Apply margin value and warning fill to one worksheet row."""
@@ -884,10 +993,10 @@ def _write_validation_results_xlsx(filepath, updates, margin_updates=None, shopi
     ws = wb.active
     _normalize_tail_columns(ws)
     margin_col, validation_col, failed_col, shopify_core_col = _ensure_validation_headers(ws)
-    for row_num, (is_valid, failed_fields) in (updates or {}).items():
-        _apply_validation_to_ws(ws, row_num, validation_col, failed_col, is_valid, failed_fields)
     for row_num, margin_value in (margin_updates or {}).items():
         _apply_margin_to_ws(ws, row_num, margin_col, margin_value)
+    for row_num, (is_valid, failed_fields) in (updates or {}).items():
+        _apply_validation_to_ws(ws, row_num, validation_col, failed_col, is_valid, failed_fields)
     for row_num, core_update in (shopify_core_updates or {}).items():
         _apply_shopify_core_to_ws(ws, row_num, shopify_core_col, core_update)
     _normalize_validation_alignment(ws, validation_col)

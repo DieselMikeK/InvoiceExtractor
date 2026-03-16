@@ -12,6 +12,11 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+try:
+    from core_detection import is_core_candidate
+except ImportError:
+    from app.core_detection import is_core_candidate
+
 
 DEFAULT_SCOPES = ['read_orders']
 DEFAULT_API_VERSION = '2025-10'
@@ -60,14 +65,7 @@ def _text_contains_po(text, po_norm):
 
 
 def _is_core_line_item(sku, name):
-    sku_text = str(sku or '').strip().lower()
-    name_text = str(name or '').strip().lower()
-    combined = f"{sku_text} {name_text}".strip()
-    if not combined:
-        return False
-    if sku_text.startswith('core'):
-        return True
-    return bool(re.search(r'\bcore\b', combined))
+    return is_core_candidate('', sku, name)
 
 
 class ShopifyClient:

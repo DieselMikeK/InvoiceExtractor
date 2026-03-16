@@ -8,6 +8,7 @@ import os
 import sys
 import re
 import csv
+from datetime import datetime, timedelta
 import pdfplumber
 
 # Try to import OCR dependencies (optional)
@@ -107,15 +108,32 @@ def _load_vendor_data():
     vendors = []
     key_to_canonical = {}
     alias_names = []
+    key_to_mailing_address = {}
+    key_to_default_terms = {}
+    key_to_due_date_days = {}
     if not os.path.exists(VENDORS_CSV_PATH):
-        return vendors, key_to_canonical, alias_names
+        return (
+            vendors,
+            key_to_canonical,
+            alias_names,
+            key_to_mailing_address,
+            key_to_default_terms,
+            key_to_due_date_days,
+        )
     try:
         with open(VENDORS_CSV_PATH, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
     except Exception:
-        return [], {}, []
+        return [], {}, [], {}, {}, {}
     if not rows:
-        return vendors, key_to_canonical, alias_names
+        return (
+            vendors,
+            key_to_canonical,
+            alias_names,
+            key_to_mailing_address,
+            key_to_default_terms,
+            key_to_due_date_days,
+        )
 
     header = [str(c).strip().lower() for c in rows[0]]
     has_header = any(
@@ -144,7 +162,14 @@ def _load_vendor_data():
             key = _normalize_vendor_key(val)
             if key and key not in key_to_canonical:
                 key_to_canonical[key] = val
-        return vendors, key_to_canonical, alias_names
+        return (
+            vendors,
+            key_to_canonical,
+            alias_names,
+            key_to_mailing_address,
+            key_to_default_terms,
+            key_to_due_date_days,
+        )
 
     def col(row, *names):
         for name in names:
@@ -153,6 +178,28 @@ def _load_vendor_data():
                 if idx < len(row):
                     return str(row[idx]).strip()
         return ''
+
+    def set_mailing_address(key, value):
+        if not key or not value:
+            return
+        if key not in key_to_mailing_address:
+            key_to_mailing_address[key] = value
+
+    def set_default_terms(key, value):
+        if not key or not value:
+            return
+        if key not in key_to_default_terms:
+            key_to_default_terms[key] = value
+
+    def set_due_date_days(key, value):
+        if not key or value in (None, ''):
+            return
+        try:
+            parsed = int(str(value).strip())
+        except Exception:
+            return
+        if key not in key_to_due_date_days:
+            key_to_due_date_days[key] = parsed
 
     for row in rows[1:]:
         if not row:
@@ -164,6 +211,19 @@ def _load_vendor_data():
         key = _normalize_vendor_key(vendor)
         if key and key not in key_to_canonical:
             key_to_canonical[key] = vendor
+        mailing_address = col(
+            row,
+            'mailing_address',
+            'vendor_address',
+            'address',
+            'default_address',
+        )
+        default_terms = col(row, 'default_terms', 'terms')
+        due_date_days = col(row, 'due_date_days')
+        if key:
+            set_mailing_address(key, mailing_address)
+            set_default_terms(key, default_terms)
+            set_due_date_days(key, due_date_days)
         aliases_val = col(row, 'aliases', 'alias', 'additional_names', 'invoice_vendor')
         if not aliases_val and 'skunexus_vendor' in header:
             aliases_val = col(row, 'skunexus_vendor')
@@ -174,11 +234,29 @@ def _load_vendor_data():
             alias_key = _normalize_vendor_key(alias)
             if alias_key and alias_key not in key_to_canonical:
                 key_to_canonical[alias_key] = vendor
+            if alias_key:
+                set_mailing_address(alias_key, mailing_address)
+                set_default_terms(alias_key, default_terms)
+                set_due_date_days(alias_key, due_date_days)
 
-    return vendors, key_to_canonical, alias_names
+    return (
+        vendors,
+        key_to_canonical,
+        alias_names,
+        key_to_mailing_address,
+        key_to_default_terms,
+        key_to_due_date_days,
+    )
 
 
-VENDOR_LIST, VENDOR_KEY_TO_CANONICAL, VENDOR_ALIAS_LIST = _load_vendor_data()
+(
+    VENDOR_LIST,
+    VENDOR_KEY_TO_CANONICAL,
+    VENDOR_ALIAS_LIST,
+    VENDOR_KEY_TO_MAILING_ADDRESS,
+    VENDOR_KEY_TO_DEFAULT_TERMS,
+    VENDOR_KEY_TO_DUE_DATE_DAYS,
+) = _load_vendor_data()
 
 
 def _find_vendor_by_address_alias(text):
@@ -202,6 +280,80 @@ def normalize_vendor_name(name):
         return name
     key = _normalize_vendor_key(name)
     return VENDOR_KEY_TO_CANONICAL.get(key, name)
+
+
+def get_vendor_default_address(name):
+    """Return the configured fallback mailing address for a vendor, if any."""
+    if not name:
+        return ''
+    candidates = [
+        _normalize_vendor_key(name),
+        _normalize_vendor_key(normalize_vendor_name(name)),
+    ]
+    for key in candidates:
+        if key and key in VENDOR_KEY_TO_MAILING_ADDRESS:
+            return VENDOR_KEY_TO_MAILING_ADDRESS[key]
+    return ''
+
+
+def get_vendor_default_terms(name):
+    """Return the configured fallback terms for a vendor, if any."""
+    if not name:
+        return ''
+    candidates = [
+        _normalize_vendor_key(name),
+        _normalize_vendor_key(normalize_vendor_name(name)),
+    ]
+    for key in candidates:
+        if key and key in VENDOR_KEY_TO_DEFAULT_TERMS:
+            return VENDOR_KEY_TO_DEFAULT_TERMS[key]
+    return ''
+
+
+def get_vendor_due_date_days(name):
+    """Return configured due-date offset in days for a vendor, if any."""
+    if not name:
+        return None
+    candidates = [
+        _normalize_vendor_key(name),
+        _normalize_vendor_key(normalize_vendor_name(name)),
+    ]
+    for key in candidates:
+        if key and key in VENDOR_KEY_TO_DUE_DATE_DAYS:
+            return VENDOR_KEY_TO_DUE_DATE_DAYS[key]
+    return None
+
+
+def _derive_due_date_from_bill_date(bill_date, days_after_bill_date):
+    """Derive a due date from bill date, preserving the original date style."""
+    bill_date = str(bill_date or '').strip()
+    if not bill_date:
+        return ''
+    try:
+        days = int(days_after_bill_date)
+    except Exception:
+        return ''
+
+    if days == 0:
+        return bill_date
+
+    parsed = None
+    for fmt in ('%m/%d/%Y', '%m/%d/%y', '%Y-%m-%d'):
+        try:
+            parsed = (datetime.strptime(bill_date, fmt), fmt)
+            break
+        except ValueError:
+            continue
+
+    if not parsed:
+        return ''
+
+    dt, fmt = parsed
+    due_dt = dt + timedelta(days=days)
+    if fmt == '%Y-%m-%d':
+        return due_dt.strftime('%Y-%m-%d')
+    year = due_dt.strftime('%y') if fmt == '%m/%d/%y' else due_dt.strftime('%Y')
+    return f"{due_dt.month}/{due_dt.day}/{year}"
 
 
 def _find_vendor_in_text_list(text, vendor_list):
@@ -570,6 +722,148 @@ def _extract_ppe_total_usd(text):
     return _normalize_amount_string(bottom_group[0]['raw'])
 
 
+def _extract_fleece_total(text):
+    """Extract Fleece total from footer lines without matching ZIP codes."""
+    if not text:
+        return ''
+
+    patterns = [
+        r'Amount\s+Due\s*:?\s*\$?([\d,]+\.\d{2})',
+        r'(?im)^Total\s+\$?([\d,]+\.\d{2})\s*$',
+        r'(?im)^Subtotal\s+\$?([\d,]+\.\d{2})\s*$',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if match:
+            return _normalize_amount_string(match.group(1))
+    return ''
+
+
+def _has_fleece_stock_order_marker(text):
+    """Return True when a Fleece invoice advertises the stocking-order discount."""
+    if not text:
+        return False
+    return bool(
+        re.search(
+            r'5%\s+Off\s+Stocking\s+Orders\s+Over\s+\$?\s*30,?000',
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _extract_turn14_footer_discount_item(text):
+    """Extract a footer discount from Turn 14 invoices as a synthetic line item."""
+    if not text:
+        return None
+
+    for raw_line in text.splitlines():
+        line = str(raw_line or '').strip()
+        if not line or not re.match(r'^Discount\b', line, re.IGNORECASE):
+            continue
+        if '%' in line:
+            continue
+        if '$' not in line and '(' not in line:
+            continue
+
+        amount_match = re.search(r'(?P<amount>-?\$?[\d,]+\.\d{2}|\(\$?[\d,]+\.\d{2}\))', line)
+        if not amount_match:
+            continue
+
+        amount_value = _parse_amount_value(amount_match.group('amount'))
+        if amount_value is None:
+            continue
+        if amount_value > 0:
+            amount_value = -amount_value
+        if abs(amount_value) < 0.005:
+            return None
+
+        amount_text = f"{amount_value:.2f}"
+        return {
+            'item_number': 'DPP DISCOUNT',
+            'quantity': '1',
+            'units': 'Each',
+            'description': '',
+            'unit_price': amount_text,
+            'amount': amount_text,
+            'is_discount': True,
+            'qb_type_override': 'Category Details',
+            'qb_category_override': 'Freight and shipping costs',
+            'qb_product_service_override': 'Shipping',
+            'qb_sku_override': 'DPP DISCOUNT',
+        }
+
+    return None
+
+
+def _is_discount_line_item(item):
+    """Return True when a parsed line item represents a discount row."""
+    if not item:
+        return False
+    item_num = str(item.get('item_number', '')).lower()
+    desc = str(item.get('description', '')).lower()
+    return bool(item.get('is_discount')) or ('discount' in item_num) or ('discount' in desc)
+
+
+def _apply_export_overrides(item, *, row_type=None, category=None, product_service=None, sku=None):
+    """Attach explicit export-field overrides to a parsed line item."""
+    if not item:
+        return item
+    if row_type is not None:
+        item['qb_type_override'] = row_type
+    if category is not None:
+        item['qb_category_override'] = category
+    if product_service is not None:
+        item['qb_product_service_override'] = product_service
+    if sku is not None:
+        item['qb_sku_override'] = sku
+    return item
+
+
+def _apply_redhead_discount_overrides(line_items):
+    """Restore Red Head discount rows to the expected item-style export mapping."""
+    for item in line_items or []:
+        if not _is_discount_line_item(item):
+            continue
+        _apply_export_overrides(
+            item,
+            row_type='Item Details',
+            category='Purchases',
+            product_service='Inventory Item (Sellable Item)',
+            sku='DPP Discount',
+        )
+
+
+def _apply_stock_order_summary(data, description='STOCK ORDER', customer=''):
+    """Collapse a stock order into a single summary row."""
+    data['stock_order'] = True
+    data['stock_order_description'] = description
+    if customer:
+        data['customer'] = customer
+    data['line_items'] = []
+    data['shipping_cost'] = ''
+    data['shipping_description'] = ''
+    data['total'] = ''
+    return data
+
+
+def _extract_ii_total(text):
+    """Extract Industrial Injection total from explicit footer lines."""
+    if not text:
+        return ''
+
+    patterns = [
+        r'(?im)^Total:\s*\$?([\d,]+\.\d{2})\s*$',
+        r'(?im)^Subtotal:\s*\$?([\d,]+\.\d{2})\s*$',
+        r'Amount\s+Due\s*:?\s*\$?([\d,]+\.\d{2})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if match:
+            return _normalize_amount_string(match.group(1))
+    return ''
+
+
 # ---------------------------------------------------------------------------
 # Vendor Detection
 # ---------------------------------------------------------------------------
@@ -812,7 +1106,7 @@ def _extract_name_after_customer(line):
             # Remove repeated customer/DBA prefixes
             while True:
                 cleaned = re.sub(
-                    r'^(diesel\s+power\s+products|power\s+products\s+unlimited|dpp)\b\s*',
+                    r'^(diesel\s+power(?:\s+products)?|power\s+products\s+unlimited|dpp)\b(?:\s*/\s*)*',
                     '', trailing, flags=re.IGNORECASE
                 ).strip()
                 cleaned = re.sub(
@@ -1116,6 +1410,15 @@ def identify_line_item_table(table):
                 if 'item_number' not in col_map:
                     col_map['item_number'] = col_idx
                     recognized += 1
+            elif 'ship qty' in header or 'invoiced qt' in header or 'invoiced qty' in header:
+                if 'ship_quantity' not in col_map:
+                    col_map['ship_quantity'] = col_idx
+                if 'quantity' not in col_map:
+                    col_map['quantity'] = col_idx
+                    recognized += 1
+            elif 'bo qty' in header or 'backorder qty' in header:
+                if 'backorder_quantity' not in col_map:
+                    col_map['backorder_quantity'] = col_idx
             elif any(kw == header or kw in header for kw in QTY_KEYWORDS):
                 if 'quantity' not in col_map:
                     col_map['quantity'] = col_idx
@@ -1236,6 +1539,66 @@ def _is_ppe_vendor_name(name):
     canonical = normalize_vendor_name(name or '')
     canonical_key = _normalize_vendor_key(canonical or '')
     if canonical_key and 'pacificperformanceengineering' in canonical_key:
+        return True
+    return False
+
+
+def _is_fl_vendor_name(name):
+    """Return True if vendor name looks like Fleece Performance Engineering."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'fleeceperformanceengineering' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    if canonical_key and 'fleeceperformanceengineering' in canonical_key:
+        return True
+    return False
+
+
+def _is_turn14_vendor_name(name):
+    """Return True if vendor name looks like Turn 14 Distribution."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'turn14distribution' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    if canonical_key and 'turn14distribution' in canonical_key:
+        return True
+    return False
+
+
+def _is_redhead_vendor_name(name):
+    """Return True if vendor name looks like Red-Head Steering Gears."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'redheadsteeringgears' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    if canonical_key and 'redheadsteeringgears' in canonical_key:
+        return True
+    return False
+
+
+def _is_ii_vendor_name(name):
+    """Return True if vendor name looks like Industrial Injection."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'industrialinjection' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    if canonical_key and 'industrialinjection' in canonical_key:
+        return True
+    return False
+
+
+def _is_pd_vendor_name(name):
+    """Return True if vendor name looks like Power Distributing."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'powerdistributing' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    if canonical_key and 'powerdistributing' in canonical_key:
         return True
     return False
 
@@ -1383,6 +1746,71 @@ def _expand_multiline_row_sb(row, col_map):
     return _expand_multiline_row(row, col_map)
 
 
+def _expand_multiline_row_pd(row, col_map):
+    """Power Distributing-specific handling for combined product/description cells.
+
+    pdfplumber often extracts PD rows as:
+      product cell: "SKU\\nDESCRIPTION"
+      qty/price/amount cells: shifted one column left from the header.
+    Treat that as one item row instead of splitting into two pseudo-items.
+    """
+    product_idx = col_map.get('item_number')
+    if product_idx is None or product_idx >= len(row):
+        return _expand_multiline_row(row, col_map)
+
+    product_lines = _split_cell_lines(row[product_idx])
+    if len(product_lines) < 2:
+        return _expand_multiline_row(row, col_map)
+
+    quantity = ''
+    quantity_key = 'ship_quantity' if 'ship_quantity' in col_map else 'quantity'
+    if quantity_key in col_map:
+        quantity_val = _find_nearby_value(
+            row,
+            col_map[quantity_key],
+            predicate=lambda v: re.match(r'^\d+(\.\d+)?$', str(v).strip()),
+            exclude_cols={col_map.get('amount'), col_map.get('unit_price')},
+        )
+        quantity = _clean_cell(quantity_val)
+
+    unit_price = ''
+    if 'unit_price' in col_map:
+        unit_price_val = _find_nearby_value(
+            row,
+            col_map['unit_price'],
+            predicate=lambda v: bool(_clean_price(v)),
+        )
+        unit_price = _clean_price(unit_price_val)
+
+    amount = ''
+    if 'amount' in col_map:
+        amount_val = _find_nearby_value(
+            row,
+            col_map['amount'],
+            predicate=lambda v: bool(_clean_price(v)),
+        )
+        amount = _clean_price(amount_val)
+
+    units = 'Each'
+    if 'units' in col_map:
+        units_val = _find_nearby_value(
+            row,
+            col_map['units'],
+            predicate=lambda v: bool(re.match(r'^[A-Za-z]+$', str(v).strip())),
+        )
+        units = _clean_cell(units_val) or 'Each'
+
+    item = {
+        'item_number': _clean_cell(product_lines[0]),
+        'quantity': quantity,
+        'unit_price': unit_price,
+        'amount': amount,
+        'description': _clean_cell(' '.join(product_lines[1:])),
+        'units': units,
+    }
+    return [mark_freight_item(item)]
+
+
 def _row_has_multiline_values(row, col_map):
     for key in ('item_number', 'quantity', 'unit_price', 'amount', 'description', 'units'):
         idx = col_map.get(key)
@@ -1417,23 +1845,24 @@ def _find_nearby_value(row, col_idx, max_offset=2, predicate=None, exclude_cols=
     return ''
 
 
-def extract_item_from_table_row(row, col_map):
+def extract_item_from_table_row(row, col_map, prefer_shipped_qty=False):
     """Extract a line item dict from a table row using the column map."""
     item = {}
+    quantity_key = 'ship_quantity' if prefer_shipped_qty and 'ship_quantity' in col_map else 'quantity'
 
     item['item_number'] = _clean_cell(row[col_map['item_number']]) if 'item_number' in col_map and col_map['item_number'] < len(row) else ''
-    item['quantity'] = _clean_cell(row[col_map['quantity']]) if 'quantity' in col_map and col_map['quantity'] < len(row) else ''
+    item['quantity'] = _clean_cell(row[col_map[quantity_key]]) if quantity_key in col_map and col_map[quantity_key] < len(row) else ''
     item['unit_price'] = _clean_price(row[col_map['unit_price']]) if 'unit_price' in col_map and col_map['unit_price'] < len(row) else ''
     item['amount'] = _clean_price(row[col_map['amount']]) if 'amount' in col_map and col_map['amount'] < len(row) else ''
     item['description'] = _clean_cell(row[col_map['description']]) if 'description' in col_map and col_map['description'] < len(row) else ''
     item['units'] = _clean_cell(row[col_map['units']]) if 'units' in col_map and col_map['units'] < len(row) else 'Each'
 
     # PD tables can be shifted; look near the mapped column for values
-    if not item['quantity'] and 'quantity' in col_map:
+    if not item['quantity'] and quantity_key in col_map:
         exclude_cols = {col_map.get('amount'), col_map.get('unit_price')}
         val = _find_nearby_value(
             row,
-            col_map['quantity'],
+            col_map[quantity_key],
             predicate=lambda v: re.match(r'^\d+(\.\d+)?$', str(v).strip()),
             exclude_cols=exclude_cols,
         )
@@ -1469,7 +1898,7 @@ def extract_item_from_table_row(row, col_map):
     return mark_freight_item(item)
 
 
-def extract_items_from_tables(filepath, sb_mode=False):
+def extract_items_from_tables(filepath, sb_mode=False, pd_mode=False):
     """Extract line items from pdfplumber tables.
 
     This is the PRIMARY extraction method. pdfplumber can detect table
@@ -1504,12 +1933,14 @@ def extract_items_from_tables(filepath, sb_mode=False):
                 continue
             row_items = []
             if _row_has_multiline_values(row, col_map):
-                if sb_mode:
+                if pd_mode:
+                    row_items = _expand_multiline_row_pd(row, col_map)
+                elif sb_mode:
                     row_items = _expand_multiline_row_sb(row, col_map)
                 else:
                     row_items = _expand_multiline_row(row, col_map)
             else:
-                item = extract_item_from_table_row(row, col_map)
+                item = extract_item_from_table_row(row, col_map, prefer_shipped_qty=pd_mode)
                 # S&B: merge description-only continuation rows into previous item
                 if sb_mode:
                     item_number = str(item.get('item_number', '')).strip()
@@ -1989,6 +2420,20 @@ def _parse_row_content(content, unit_price, amount):
 
     # Pattern A0: SKU QTY BACKORDERED [U/M] (no description on this line)
     match = re.match(
+        r'^([A-Za-z0-9][A-Za-z0-9\-\/\.]*\s+CORE)\s+(\d+)\s+\d+\s*(?:Each|EA|Piece|pc|pcs|units?)?$',
+        content, re.IGNORECASE
+    )
+    if match:
+        return {
+            'item_number': match.group(1).strip(),
+            'quantity': match.group(2),
+            'units': 'Each',
+            'description': '',
+            'unit_price': unit_price,
+            'amount': amount,
+        }
+
+    match = re.match(
         r'^(\S+)\s+(\d+)\s+\d+\s*(?:Each|EA|Piece|pc|pcs|units?)?$',
         content, re.IGNORECASE
     )
@@ -2128,7 +2573,8 @@ def extract_line_items(text, filepath=None, vendor_name=None):
     """
     # Step 1: Try pdfplumber table extraction (most reliable)
     sb_mode = _is_sb_vendor_name(vendor_name)
-    items = extract_items_from_tables(filepath, sb_mode=sb_mode)
+    pd_mode = _is_pd_vendor_name(vendor_name)
+    items = extract_items_from_tables(filepath, sb_mode=sb_mode, pd_mode=pd_mode)
 
     # Step 2: Fall back to text-based extraction
     if not items:
@@ -2447,20 +2893,30 @@ def parse_invoice_text(text, filepath=None):
     # --- Shipping Cost ---
     # Supports: "Shipping Cost (FedEx...) 12.00", "Drop Ship $5.00",
     #           "Freight $0.00", "FREIGHT OUT $67.00", "FreightEB"
-    data['shipping_cost'] = parse_field(text, [
-        r'Shipping\s+Cost\s*\([^)]+\)\s*\$?([\d,]+\.?\d*)',   # S&B
-        r'(?im)^Drop\s+Ship\s+\d+\.?\d*\s+\d+\.?\d*\s+[\d,]+\.?\d{2}\s+([\d,]+\.?\d{2})\s*$',  # PPE
-        r'Drop\s+Ship\s+\$?([\d,]+\.?\d*)',                    # FL, PPE
-        r'FREIGHT\s+OUT\s+\$?([\d,]+\.?\d*)',                   # II
-        r'Freight\s+\$?([\d,]+\.?\d*)',                         # T14, general
-    ])
-    if data['shipping_cost'] and not data.get('shipping_description'):
-        if re.search(r'Drop\s+Ship', text, re.IGNORECASE):
-            data['shipping_description'] = 'Drop Ship'
+    _shipping_patterns = [
+        (r'Shipping\s+Cost\s*\([^)]+\)\s*\$?([\d,]+\.?\d*)', 'Shipping'),   # S&B
+        (r'(?im)^Drop\s+Ship\s+\d+\.?\d*\s+\d+\.?\d*\s+[\d,]+\.?\d{2}\s+([\d,]+\.?\d{2})\s*$', 'Drop Ship'),  # PPE
+        (r'Drop\s+Ship\s+\$?([\d,]+\.?\d*)', 'Drop Ship'),                    # FL, PPE
+        (r'FREIGHT\s+OUT\s+\$?([\d,]+\.?\d*)', 'Freight'),                    # II
+        (r'Freight\s+\$?([\d,]+\.?\d*)', 'Freight'),                          # T14, general
+    ]
+    for _pat, _desc in _shipping_patterns:
+        _m = re.search(_pat, text, re.IGNORECASE | re.MULTILINE)
+        if _m:
+            data['shipping_cost'] = _m.group(1).strip()
+            if not data.get('shipping_description'):
+                data['shipping_description'] = _desc
+            break
+    if not data.get('shipping_cost'):
+        data['shipping_cost'] = ''
 
     # --- Total ---
     if _is_ppe_vendor_name(data.get('vendor', '')):
         data['total'] = _extract_ppe_total_usd(text)
+    elif _is_fl_vendor_name(data.get('vendor', '')):
+        data['total'] = _extract_fleece_total(text)
+    elif _is_ii_vendor_name(data.get('vendor', '')):
+        data['total'] = _extract_ii_total(text)
     else:
         data['total'] = _extract_total_amount(text)
     if not data['total']:
@@ -2475,6 +2931,19 @@ def parse_invoice_text(text, filepath=None):
 
     # --- Line Items ---
     data['line_items'] = extract_line_items(text, filepath, vendor_name=data.get('vendor'))
+    if _is_redhead_vendor_name(data.get('vendor', '')):
+        _apply_redhead_discount_overrides(data['line_items'])
+    if _is_turn14_vendor_name(data.get('vendor', '')):
+        has_discount_item = any(
+            bool(item.get('is_discount')) or 'discount' in (
+                f"{item.get('item_number', '')} {item.get('description', '')}"
+            ).lower()
+            for item in data['line_items']
+        )
+        if not has_discount_item:
+            footer_discount_item = _extract_turn14_footer_discount_item(text)
+            if footer_discount_item:
+                data['line_items'].append(footer_discount_item)
     if data['line_items']:
         freight_items = [i for i in data['line_items'] if i.get('is_freight')]
         if freight_items and not data.get('shipping_description'):
@@ -2528,21 +2997,49 @@ def parse_invoice(filepath, status_callback=None):
     if not data.get('vendor'):
         data['vendor'] = infer_vendor_from_filename(filename)
     data['vendor'] = normalize_vendor_name(data.get('vendor', ''))
+    if not str(data.get('vendor_address', '')).strip():
+        data['vendor_address'] = get_vendor_default_address(data.get('vendor', ''))
+    if not str(data.get('terms', '')).strip():
+        data['terms'] = get_vendor_default_terms(data.get('vendor', ''))
+    if not str(data.get('due_date', '')).strip():
+        due_date_days = get_vendor_due_date_days(data.get('vendor', ''))
+        if due_date_days is not None:
+            data['due_date'] = _derive_due_date_from_bill_date(
+                data.get('date', ''),
+                due_date_days,
+            )
     data['page_count'] = page_count
 
     # PPE-specific rule: multi-page invoices are treated as stock orders.
     if page_count > 1 and _is_ppe_vendor_name(data.get('vendor', '')):
-        data['stock_order'] = True
-        data['stock_order_description'] = 'STOCK ORDER'
-        data['customer'] = 'Power Products Unlimited'
-        data['line_items'] = []
-        data['shipping_cost'] = ''
-        data['shipping_description'] = ''
-        data['total'] = ''
+        _apply_stock_order_summary(
+            data,
+            description='STOCK ORDER',
+            customer='Power Products Unlimited',
+        )
         bill_no = str(data.get('invoice_number') or '').strip() or 'N/A'
         po_number = str(data.get('po_number') or '').strip() or 'N/A'
         cb(
             "  PPE multi-page invoice detected; outputting STOCK ORDER summary row "
+            f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
+            "warning"
+        )
+    elif _is_fl_vendor_name(data.get('vendor', '')) and _has_fleece_stock_order_marker(text):
+        stock_customer = 'Diesel Power Products' if re.search(
+            r'diesel\s+power\s+products',
+            text,
+            re.IGNORECASE,
+        ) else str(data.get('customer') or '').strip()
+        _apply_stock_order_summary(
+            data,
+            description='STOCK ORDER',
+            customer=stock_customer,
+        )
+        bill_no = str(data.get('invoice_number') or '').strip() or 'N/A'
+        po_number = str(data.get('po_number') or '').strip() or 'N/A'
+        cb(
+            "  Fleece stocking-order invoice detected from footer note; outputting "
+            "STOCK ORDER summary row "
             f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
             "warning"
         )

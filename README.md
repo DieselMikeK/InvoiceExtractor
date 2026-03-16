@@ -73,6 +73,11 @@ Or use the pre-built executable: `InvoiceExtractor.exe`
 3. **Parse**: PDFs are parsed and data is extracted to `invoices_output.xlsx`
 4. **Validate**: Click "Validate POs" to compare invoice data against SkuNexus purchase orders
 
+## Repo Notes
+
+- Workspace automation rules live in [AGENTS.md](../AGENTS.md), including the 2-minute command watchdog rule for long-running tasks.
+- Training runs should default to a single combined `training_output.xlsx` in the app root unless a separate output layout is explicitly requested.
+
 ### Output Format
 
 The generated Excel file follows QuickBooks Bill Import format with columns:

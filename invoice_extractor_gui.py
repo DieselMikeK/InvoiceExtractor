@@ -36,6 +36,10 @@ from gmail_client import (
     PROCESSED_LABEL_NAME,
     WrongAuthorizedAccountError
 )
+try:
+    from core_detection import is_core_candidate
+except ImportError:
+    from app.core_detection import is_core_candidate
 from invoice_parser import parse_invoice, OCR_AVAILABLE
 from spreadsheet_writer import (
     COLUMNS, write_invoice_to_spreadsheet, read_spreadsheet_rows,
@@ -210,12 +214,7 @@ def _is_core_row(row):
     product_service = str(row.get('product_service', '')).strip().lower()
     sku = str(row.get('sku', '')).strip().lower()
     description = str(row.get('description', '')).strip().lower()
-
-    if product_service == 'core':
-        return True
-    if sku.startswith('core'):
-        return True
-    return bool(re.search(r'\bcore\b', f"{sku} {description}"))
+    return is_core_candidate(product_service, sku, description)
 
 
 def get_base_dir():
