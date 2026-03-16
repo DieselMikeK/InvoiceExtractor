@@ -70,15 +70,15 @@ if defined PYTHON_EXE (
 )
 
 REM --- No Python found — download and install isolated Python 3.12 (PyInstaller stable) ---
-echo  [*] Setting up isolated Python 3.12 (one-time, ~25MB)...
-echo      This will only happen once.
+echo  [*] Setting up isolated Python 3.12 (one-time setup)...
+echo      A Python installer window will appear — please wait for it to finish.
 echo.
 
 set "PY_INSTALLER_URL=https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
 set "PY_INSTALLER_TMP=%TEMP%\python_installer_3.12.9.exe"
 set "PY_INSTALL_DIR=%UPDATE_DIR%\python"
 
-echo  [*] Downloading Python 3.14.0...
+echo  [*] Downloading Python 3.12.9...
 powershell -Command "Invoke-WebRequest -Uri '%PY_INSTALLER_URL%' -OutFile '%PY_INSTALLER_TMP%'" >nul 2>&1
 if !errorlevel! neq 0 (
     powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Failed to download Python. Please check your internet connection and try again.', 'Download Failed', 'OK', 'Error')" >nul 2>&1
@@ -87,21 +87,28 @@ if !errorlevel! neq 0 (
 echo  [OK] Downloaded.
 
 echo  [*] Installing Python to update\python\ (no admin needed)...
-"%PY_INSTALLER_TMP%" /quiet InstallAllUsers=0 TargetDir="%PY_INSTALL_DIR%" ^
+"%PY_INSTALLER_TMP%" /passive InstallAllUsers=0 TargetDir="%PY_INSTALL_DIR%" ^
     Include_pip=1 Include_launcher=0 Include_test=0 Include_doc=0 ^
     Include_tcltk=1
 if !errorlevel! neq 0 (
-    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installation failed. See update\build_log.txt for details.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installation failed. See app\update\build_log.txt for details.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
     exit /b 1
 )
 del "%PY_INSTALLER_TMP%" >nul 2>&1
 
 if not exist "%PY_INSTALL_DIR%\python.exe" (
-    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installed but python.exe not found. Please contact support.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
-    exit /b 1
+    REM Installer may have placed it one level deeper — search for it
+    for /r "%PY_INSTALL_DIR%" %%F in (python.exe) do (
+        if not defined PYTHON_EXE set "PYTHON_EXE=%%F"
+    )
+    if not defined PYTHON_EXE (
+        powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installed but python.exe not found. Please delete app\update\python\ and try again, or contact support.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
+        exit /b 1
+    )
+    echo  [OK] Found python.exe at: !PYTHON_EXE!
+) else (
+    set "PYTHON_EXE=%PY_INSTALL_DIR%\python.exe"
 )
-
-set "PYTHON_EXE=%PY_INSTALL_DIR%\python.exe"
 echo  [OK] Python installed at: %PYTHON_EXE%
 
 REM --- Save to config ---
