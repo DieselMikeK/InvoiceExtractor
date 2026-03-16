@@ -399,17 +399,14 @@ class InvoiceExtractorGUI:
         self._update_banner = banner
 
     def _do_update(self, latest_version):
-        """Launch updater.bat which pulls latest source and rebuilds the exe."""
+        """Launch app/update/updater.bat which pulls latest source and rebuilds the exe."""
         if self._update_banner:
             self._update_banner.destroy()
             self._update_banner = None
-        exe_dir = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
-        # updater.bat sits next to the exe (one level up from app/ when frozen)
-        updater = os.path.join(exe_dir, 'updater.bat')
+        # updater.bat lives in app/update/ relative to the app_dir
+        updater = os.path.join(self.app_dir, 'update', 'updater.bat')
         if not os.path.exists(updater):
-            updater = os.path.join(os.path.dirname(exe_dir), 'updater.bat')
-        if not os.path.exists(updater):
-            tk.messagebox.showerror("Update Failed", "updater.bat not found next to InvoiceExtractor.exe.")
+            tk.messagebox.showerror("Update Failed", f"updater.bat not found at:\n{updater}")
             return
         subprocess.Popen(['cmd', '/c', updater], creationflags=subprocess.CREATE_NEW_CONSOLE)
         self.root.destroy()
