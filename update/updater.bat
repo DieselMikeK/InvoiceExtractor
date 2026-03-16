@@ -128,6 +128,10 @@ if !errorlevel! neq 0 (
 REM --- Overwrite exe at root ---
 copy /y "%APP_DIR%\dist\InvoiceExtractor.exe" "%ROOT_DIR%\InvoiceExtractor.exe" >nul
 
+REM --- Clean up PyInstaller build artifacts ---
+if exist "%APP_DIR%\dist" rd /s /q "%APP_DIR%\dist" >nul 2>&1
+if exist "%APP_DIR%\build" rd /s /q "%APP_DIR%\build" >nul 2>&1
+
 REM --- Clean up any leftover zip files in root ---
 del /q "%ROOT_DIR%\*.zip" >nul 2>&1
 
