@@ -70,39 +70,42 @@ if defined PYTHON_EXE (
     goto :INSTALL_DEPS
 )
 
-REM --- No Python found — download and install isolated Python 3.12 (PyInstaller stable) ---
-echo  [*] Setting up isolated Python 3.12 (one-time setup)...
-echo      A Python installer window will appear — please wait for it to finish.
+REM --- No Python found — download embeddable Python 3.12 + pip ---
+echo  [*] Setting up isolated Python 3.12 (one-time setup, ~25MB)...
 echo.
 
-set "PY_INSTALLER_URL=https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
-set "PY_INSTALLER_TMP=%TEMP%\python_installer_3.12.9.exe"
-set "PY_INSTALL_DIR=%UPDATE_DIR%\python"
+set "PY_ZIP_URL=https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip"
+set "PY_ZIP_TMP=%TEMP%\python-3.12.9-embed.zip"
+set "GETPIP_URL=https://bootstrap.pypa.io/get-pip.py"
+set "GETPIP_TMP=%TEMP%\get-pip.py"
 
-echo  [*] Downloading Python 3.12.9...
-powershell -Command "Invoke-WebRequest -Uri '%PY_INSTALLER_URL%' -OutFile '%PY_INSTALLER_TMP%'" >nul 2>&1
+if not exist "%PY_INSTALL_DIR%" mkdir "%PY_INSTALL_DIR%"
+
+echo  [*] Downloading Python 3.12.9 embeddable...
+powershell -Command "Invoke-WebRequest -Uri '%PY_ZIP_URL%' -OutFile '%PY_ZIP_TMP%'" >nul 2>&1
 if !errorlevel! neq 0 (
-    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Failed to download Python. Please check your internet connection and try again.', 'Download Failed', 'OK', 'Error')" >nul 2>&1
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Failed to download Python. Please check your internet connection.', 'Download Failed', 'OK', 'Error')" >nul 2>&1
     exit /b 1
 )
-echo  [OK] Downloaded.
+powershell -Command "Expand-Archive -Path '%PY_ZIP_TMP%' -DestinationPath '%PY_INSTALL_DIR%' -Force" >nul 2>&1
+del "%PY_ZIP_TMP%" >nul 2>&1
+echo  [OK] Python extracted.
 
-echo  [*] Installing Python to update\python\ (no admin needed)...
-"%PY_INSTALLER_TMP%" /passive InstallAllUsers=0 TargetDir="%PY_INSTALL_DIR%" ^
-    Include_pip=1 Include_launcher=0 Include_test=0 Include_doc=0 ^
-    Include_tcltk=1
-if !errorlevel! neq 0 (
-    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installation failed. See app\update\build_log.txt for details.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
-    exit /b 1
-)
-del "%PY_INSTALLER_TMP%" >nul 2>&1
+REM Enable site-packages and pip by uncommenting import site in ._pth file
+powershell -Command "(Get-Content '%PY_INSTALL_DIR%\python312._pth') -replace '#import site','import site' | Set-Content '%PY_INSTALL_DIR%\python312._pth'" >nul 2>&1
+
+echo  [*] Installing pip...
+powershell -Command "Invoke-WebRequest -Uri '%GETPIP_URL%' -OutFile '%GETPIP_TMP%'" >nul 2>&1
+"%PY_INSTALL_DIR%\python.exe" "%GETPIP_TMP%" --quiet >nul 2>&1
+del "%GETPIP_TMP%" >nul 2>&1
+echo  [OK] pip installed.
 
 set "PYTHON_EXE=%PY_INSTALL_DIR%\python.exe"
 if not exist "!PYTHON_EXE!" (
-    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python installed but python.exe not found. Please delete app\update\python\ and try again.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
+    powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python setup failed. Please contact support.', 'Install Failed', 'OK', 'Error')" >nul 2>&1
     exit /b 1
 )
-echo  [OK] Python installed at: !PYTHON_EXE!
+echo  [OK] Python ready at: !PYTHON_EXE!
 
 REM --- Save to config ---
 if not exist "%REQUIRED_DIR%" mkdir "%REQUIRED_DIR%"
