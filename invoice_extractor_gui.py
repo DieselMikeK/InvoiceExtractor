@@ -51,7 +51,7 @@ from spreadsheet_writer import (
 from skunexus_client import SkuNexusClient, validate_po_row
 from shopify_client import ShopifyClient
 
-APP_VERSION = "1.1.8"
+APP_VERSION = "1.1.9"
 GITHUB_REPO = "DieselMikeK/InvoiceExtractor"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
@@ -354,8 +354,14 @@ class InvoiceExtractorGUI:
             latest_tag = data.get('tag_name', '').lstrip('v')
             if not latest_tag:
                 return
+            # Find the exe asset download URL
+            download_url = None
+            for asset in data.get('assets', []):
+                if asset.get('name', '').lower().endswith('.exe'):
+                    download_url = asset.get('browser_download_url')
+                    break
             if self._version_tuple(latest_tag) > self._version_tuple(APP_VERSION):
-                self.root.after(0, lambda: self._show_update_banner(latest_tag))
+                self.root.after(0, lambda: self._show_update_banner(latest_tag, download_url))
         except Exception:
             pass  # Silently ignore — no internet, timeout, etc.
 
@@ -365,7 +371,7 @@ class InvoiceExtractorGUI:
         except Exception:
             return (0,)
 
-    def _show_update_banner(self, latest_version):
+    def _show_update_banner(self, latest_version, download_url=None):
         """Show a non-intrusive update banner below the header."""
         if self._update_banner:
             return
@@ -384,7 +390,7 @@ class InvoiceExtractorGUI:
             bg='#145228', fg='white',
             font=('Segoe UI', 9, 'bold'),
             relief='flat', cursor='hand2',
-            command=lambda: self._do_update(latest_version)
+            command=lambda: self._do_update(latest_version, download_url)
         )
         btn.pack(side=tk.LEFT, padx=4)
         dismiss = tk.Button(
@@ -398,17 +404,39 @@ class InvoiceExtractorGUI:
         dismiss.pack(side=tk.RIGHT, padx=8)
         self._update_banner = banner
 
-    def _do_update(self, latest_version):
-        """Launch app/update/updater.bat which pulls latest source and rebuilds the exe."""
+    def _do_update(self, latest_version, download_url=None):
+        """Launch updater.py via the bundled Python to download and swap the exe."""
         if self._update_banner:
             self._update_banner.destroy()
             self._update_banner = None
-        # updater.bat lives in app/update/ relative to the app_dir
-        updater = os.path.join(self.app_dir, 'update', 'updater.bat')
-        if not os.path.exists(updater):
-            tk.messagebox.showerror("Update Failed", f"updater.bat not found at:\n{updater}")
+
+        if not download_url:
+            tk.messagebox.showerror(
+                "Update Failed",
+                "Could not find the download URL for this release.\n"
+                "Please download the update manually from GitHub."
+            )
             return
-        subprocess.Popen(['cmd', '/c', updater], creationflags=subprocess.CREATE_NEW_CONSOLE)
+
+        # updater.py is bundled in the exe's _MEIPASS temp dir (frozen) or in app/update/ (dev)
+        updater_script = get_resource_path(os.path.join('update', 'updater.py'))
+        if not os.path.exists(updater_script):
+            # fallback: look in app/update/ on disk
+            updater_script = os.path.join(self.app_dir, 'update', 'updater.py')
+        if not os.path.exists(updater_script):
+            tk.messagebox.showerror("Update Failed", f"updater.py not found at:\n{updater_script}")
+            return
+
+        # exe_path: the actual exe on disk (not the _MEIPASS temp copy)
+        if getattr(sys, 'frozen', False):
+            exe_path = sys.executable
+        else:
+            exe_path = os.path.join(self.base_dir, 'InvoiceExtractor.exe')
+
+        subprocess.Popen(
+            [sys.executable, updater_script, APP_VERSION, latest_version, download_url, exe_path],
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
         self.root.destroy()
 
     def _get_next_run_paths(self):

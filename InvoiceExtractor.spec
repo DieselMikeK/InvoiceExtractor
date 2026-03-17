@@ -5,7 +5,7 @@ a = Analysis(
     ['invoice_extractor_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('header.png', '.'), ('logo.ico', '.')],
+    datas=[('header.png', '.'), ('logo.ico', '.'), ('update/updater.py', 'update')],
     hiddenimports=[],
     hookspath=['hooks'],
     hooksconfig={},
