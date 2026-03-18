@@ -847,6 +847,129 @@ def _apply_stock_order_summary(data, description='STOCK ORDER', customer=''):
     return data
 
 
+_OUR_ADDRESS_PATTERNS = [
+    re.compile(r'6200\s+E\.?\s+Main', re.IGNORECASE),
+    re.compile(r'spokane\s+valley', re.IGNORECASE),
+    re.compile(r'\b99212\b'),
+]
+
+_OUR_COMPANY_NAMES = re.compile(
+    r'diesel\s+power\s+products|power\s+products\s+unlimited',
+    re.IGNORECASE,
+)
+
+_TABLE_HEADER_RE = re.compile(
+    r'\b(invoice\s+date|due\s+date|po\s+date|line\s+product|qty\s+part|'
+    r'order\s+qty|unit\s+price|subtotal|ship\s+method|payment\s+terms|'
+    r'fob\s+point|terms\s+taken)\b',
+    re.IGNORECASE,
+)
+
+
+def _extract_ship_to_lines(text):
+    """Return lines that belong to the Ship To block, handling side-by-side columns.
+
+    For side-by-side layouts (Bill To / Ship To on same line), extracts only the
+    right-hand (Ship To) portion of each line.
+    """
+    if not text:
+        return []
+
+    lines = text.split('\n')
+    # Find the "Bill To Ship To" or "Ship To" header line
+    header_idx = None
+    side_by_side = False
+    for i, line in enumerate(lines):
+        if re.search(r'bill\s+to\s+ship\s+to|ship\s+to\s+bill\s+to', line, re.IGNORECASE):
+            header_idx = i
+            side_by_side = True
+            break
+        if re.search(r'^\s*ship\s+to\b', line, re.IGNORECASE):
+            header_idx = i
+            break
+
+    if header_idx is None:
+        return []
+
+    ship_to_lines = []
+    for line in lines[header_idx + 1:header_idx + 12]:
+        if _TABLE_HEADER_RE.search(line):
+            break
+        if side_by_side:
+            # Split on the first gap of 2+ spaces to separate Bill To / Ship To columns
+            col_split = re.search(r'\s{2,}', line)
+            if col_split:
+                ship_part = line[col_split.end():].strip()
+            else:
+                ship_part = line.strip()
+        else:
+            ship_part = line.strip()
+        if ship_part:
+            ship_to_lines.append(ship_part)
+
+    return ship_to_lines
+
+
+_OTHER_ZIP_RE = re.compile(r'\b(?!99212\b)\d{5}\b')
+_OTHER_STREET_RE = re.compile(r'\d+\s+\w.*(?:St|Ave|Rd|Blvd|Dr|Ln|Way|Hwy|Street|Avenue|Road)\b', re.IGNORECASE)
+
+
+def _our_address_line_clean(line):
+    """True if line contains our address signal without a foreign address mixed in."""
+    if not any(p.search(line) for p in _OUR_ADDRESS_PATTERNS):
+        return False
+    # If the line also has a non-99212 zip or a different street address, it's mixed
+    if _OTHER_ZIP_RE.search(line):
+        return False
+    if _OTHER_STREET_RE.search(line) and not re.search(r'6200\s+E\.?\s+Main', line, re.IGNORECASE):
+        return False
+    return True
+
+
+def _ship_to_block_lines(text):
+    """Return only the ship-to address block, stopping when a foreign address appears.
+
+    Walks ship-to lines and stops as soon as a non-our-address zip or street is seen,
+    preventing bill-to column overflow from being included.
+    """
+    ship_lines = _extract_ship_to_lines(text)
+    result = []
+    for line in ship_lines:
+        # Stop if we hit a foreign zip code — indicates another address mixed in
+        if _OTHER_ZIP_RE.search(line):
+            break
+        result.append(line)
+    return result
+
+
+def _ship_to_our_address(text):
+    """Return True if the ship-to block is our warehouse address."""
+    block_lines = _ship_to_block_lines(text)
+    block = '\n'.join(block_lines)
+    matches = sum(1 for p in _OUR_ADDRESS_PATTERNS if p.search(block))
+    return matches >= 2
+
+
+def _will_call_customer_from_ship_to(text):
+    """If ship-to is our address but has a customer name, return it (will call).
+
+    Returns the customer name string, or '' if it's a plain stock order.
+    """
+    block_lines = _ship_to_block_lines(text)
+    for line in block_lines:
+        if _OUR_COMPANY_NAMES.search(line):
+            continue  # our own company name
+        if any(p.search(line) for p in _OUR_ADDRESS_PATTERNS):
+            continue  # our address
+        if re.match(r'^\d', line):
+            continue  # starts with digit
+        if len(line) < 3:
+            continue
+        # First non-address, non-company line is the customer name
+        return line
+    return ''
+
+
 def _extract_ii_total(text):
     """Extract Industrial Injection total from explicit footer lines."""
     if not text:
@@ -2994,6 +3117,18 @@ def parse_invoice(filepath, status_callback=None):
     cb(f"  Parsing invoice data from {filename}...")
     data = parse_invoice_text(text, filepath)
 
+    # Step 4: Pre-validate — if no bill number, no PO number, and no line items,
+    # this is not an invoice (e.g. return forms, flyers, packing slips).
+    has_bill_no = bool(str(data.get('invoice_number', '')).strip())
+    has_po = bool(str(data.get('po_number', '')).strip())
+    has_line_items = any(
+        str(item.get('amount', '')).strip()
+        for item in (data.get('line_items') or [])
+    )
+    if not has_bill_no and not has_po and not has_line_items:
+        cb(f"  Not an invoice (no bill no, PO, or line items): {filename}", "warning")
+        return {'not_an_invoice': True}
+
     if not data.get('vendor'):
         data['vendor'] = infer_vendor_from_filename(filename)
     data['vendor'] = normalize_vendor_name(data.get('vendor', ''))
@@ -3043,6 +3178,37 @@ def parse_invoice(filepath, status_callback=None):
             f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
             "warning"
         )
+
+    # Ship-to address stock order / will call detection (any vendor)
+    # If not already flagged as a stock order and ship-to is our warehouse address:
+    #   - plain stock order if ship-to name is us or blank
+    #   - will call if a different customer name appears in the ship-to block
+    if not data.get('stock_order') and _ship_to_our_address(text):
+        will_call_customer = _will_call_customer_from_ship_to(text)
+        bill_no = str(data.get('invoice_number') or '').strip() or 'N/A'
+        po_number = str(data.get('po_number') or '').strip() or 'N/A'
+        if will_call_customer:
+            _apply_stock_order_summary(
+                data,
+                description='WILL CALL',
+                customer=will_call_customer,
+            )
+            cb(
+                f"  Will call detected (ship-to is our address, customer: {will_call_customer}); "
+                f"outputting WILL CALL summary row (Bill No: {bill_no}, Memo/PO: {po_number}).",
+                "warning"
+            )
+        else:
+            _apply_stock_order_summary(
+                data,
+                description='STOCK ORDER',
+                customer='Diesel Power Products',
+            )
+            cb(
+                "  Stock order detected (ship-to is our warehouse address); "
+                f"outputting STOCK ORDER summary row (Bill No: {bill_no}, Memo/PO: {po_number}).",
+                "warning"
+            )
 
     data['source_file'] = filename
     data['raw_text'] = text

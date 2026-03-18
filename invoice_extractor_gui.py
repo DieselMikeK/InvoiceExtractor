@@ -1477,51 +1477,40 @@ class InvoiceExtractorGUI:
                     try:
                         invoice_data = parse_invoice(filepath, self.log)
 
-                        if invoice_data:
+                        if invoice_data and invoice_data.get('not_an_invoice'):
+                            folder_name = os.path.basename(self.invoices_dir)
+                            root_name = os.path.basename(os.path.dirname(self.invoices_dir))
+                            source_path = os.path.join(
+                                root_name, folder_name, filename
+                            ).replace('\\', '/')
+                            write_not_invoice_row(self.output_file, source_path, self.log)
+                            success_count += 1
+                        elif invoice_data:
                             folder_name = os.path.basename(self.invoices_dir)
                             root_name = os.path.basename(os.path.dirname(self.invoices_dir))
                             source_path = os.path.join(
                                 root_name, folder_name, filename
                             ).replace('\\', '/')
                             invoice_data['source_path'] = source_path
-
-                            # Check if this looks like a real invoice (at least 3 of 5 key fields present)
+                            write_invoice_to_spreadsheet(
+                                self.output_file, invoice_data, self.log
+                            )
+                            success_count += 1
                             bill_no = str(invoice_data.get('invoice_number', '')).strip()
                             po_number = str(invoice_data.get('po_number', '')).strip()
                             vendor = str(invoice_data.get('vendor', '')).strip()
                             invoice_date = str(invoice_data.get('date', '')).strip()
-                            has_line_items = any(
-                                str(item.get('amount', '')).strip()
-                                for item in (invoice_data.get('line_items') or [])
-                            )
-                            present = sum([
-                                bool(bill_no),
-                                bool(po_number),
-                                bool(vendor),
-                                bool(invoice_date),
-                                has_line_items,
-                            ])
-                            if present < 3:
-                                self.log(f"  Not an invoice (only {present}/5 fields found): {filename}", "warning")
-                                write_not_invoice_row(self.output_file, source_path, self.log)
-                                success_count += 1
-                            else:
-                                # Write to spreadsheet
-                                write_invoice_to_spreadsheet(
-                                    self.output_file, invoice_data, self.log
-                                )
-                                success_count += 1
-                                key = _history_key(bill_no, po_number, vendor, invoice_date)
-                                if key and key not in history_keys and key not in new_history_keys:
-                                    new_history_entries.append({
-                                        'bill_no': bill_no,
-                                        'po_number': po_number,
-                                        'vendor': vendor,
-                                        'invoice_date': invoice_date,
-                                        'downloaded_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                        'source_file': _source_file(filename),
-                                    })
-                                    new_history_keys.add(key)
+                            key = _history_key(bill_no, po_number, vendor, invoice_date)
+                            if key and key not in history_keys and key not in new_history_keys:
+                                new_history_entries.append({
+                                    'bill_no': bill_no,
+                                    'po_number': po_number,
+                                    'vendor': vendor,
+                                    'invoice_date': invoice_date,
+                                    'downloaded_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                    'source_file': _source_file(filename),
+                                })
+                                new_history_keys.add(key)
                         else:
                             error_count += 1
                             error_files.append(filename)

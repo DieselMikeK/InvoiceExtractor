@@ -27,6 +27,7 @@ SHOPIFY_CORE_MISSING_FILL = PatternFill(start_color="FFFF6666", end_color="FFFF6
 SHOPIFY_CORE_MISMATCH_FILL = PatternFill(start_color="FFDDEBF7", end_color="FFDDEBF7", fill_type="solid")
 SB_DELIVERY_FEE_FONT_COLOR = "FFFF0000"
 NOT_INVOICE_FILL = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
+NOT_INVOICE_FILL_DARK = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
 
 
 # QuickBooks Bill Import column definitions (matching Taylor's format)
@@ -755,6 +756,16 @@ def write_not_invoice_row(filepath, source_path, status_callback=None):
     row_num = ws.max_row + 1
     header_map = _build_header_map(ws)
 
+    # Alternate shade if the previous row was also a "Not an Invoice" row
+    row_fill = NOT_INVOICE_FILL
+    if row_num > 2:
+        bill_col = header_map.get('bill no.') or COLUMN_INDEX.get('bill_no', 1)
+        prev_cell = ws.cell(row=row_num - 1, column=bill_col)
+        if str(prev_cell.value or '').strip() == 'Not an Invoice':
+            prev_rgb = str(prev_cell.fill.start_color.rgb if prev_cell.fill else '').upper()
+            # If previous row was light red, use dark red; otherwise use light red
+            row_fill = NOT_INVOICE_FILL_DARK if prev_rgb.endswith('FFCCCC') else NOT_INVOICE_FILL
+
     for key, header in COLUMNS:
         col_idx = header_map.get(str(header).strip().lower())
         if not col_idx:
@@ -762,7 +773,7 @@ def write_not_invoice_row(filepath, source_path, status_callback=None):
             header_map = _build_header_map(ws)
         value = 'Not an Invoice' if key == 'bill_no' else ''
         cell = ws.cell(row=row_num, column=col_idx, value=value)
-        cell.fill = NOT_INVOICE_FILL
+        cell.fill = row_fill
 
     # Hyperlink "Not an Invoice" in Bill No. column to the source file
     bill_col = header_map.get('bill no.')
