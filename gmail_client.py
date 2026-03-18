@@ -15,7 +15,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive',
 ]
 
 PROCESSED_LABEL_NAME = "InvoiceExtractor-Processed"
@@ -411,7 +411,7 @@ class DriveHistoryClient:
     """Reads and writes the shared invoice_history.csv on Google Drive."""
 
     def __init__(self, creds, status_callback=None):
-        self.service = build('drive', 'v3', credentials=creds)
+        self.service = build('drive', 'v3', credentials=creds, static_discovery=False)
         self.status_callback = status_callback or (lambda msg, tag=None: None)
         self._file_id = None
 
