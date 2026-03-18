@@ -26,6 +26,7 @@ MARGIN_LOW_FILL = PatternFill(start_color="FFC000", end_color="FFC000", fill_typ
 SHOPIFY_CORE_MISSING_FILL = PatternFill(start_color="FFFF6666", end_color="FFFF6666", fill_type="solid")
 SHOPIFY_CORE_MISMATCH_FILL = PatternFill(start_color="FFDDEBF7", end_color="FFDDEBF7", fill_type="solid")
 SB_DELIVERY_FEE_FONT_COLOR = "FFFF0000"
+NOT_INVOICE_FILL = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
 
 
 # QuickBooks Bill Import column definitions (matching Taylor's format)
@@ -742,6 +743,38 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 def write_invoice_to_spreadsheet(filepath, invoice_data, status_callback=None):
     """Append invoice data to spreadsheet (wrapper for write_invoice_rows)."""
     return write_invoice_rows(filepath, invoice_data, status_callback)
+
+
+def write_not_invoice_row(filepath, source_path, status_callback=None):
+    """Write a single red 'Not an Invoice' row for a file that failed the invoice check."""
+    is_csv = _is_csv(filepath)
+    if is_csv:
+        return
+
+    wb, ws = get_or_create_workbook(filepath)
+    row_num = ws.max_row + 1
+    header_map = _build_header_map(ws)
+
+    for key, header in COLUMNS:
+        col_idx = header_map.get(str(header).strip().lower())
+        if not col_idx:
+            col_idx = _resolve_col_by_key(ws, key, create_if_missing=True)
+            header_map = _build_header_map(ws)
+        value = 'Not an Invoice' if key == 'bill_no' else ''
+        cell = ws.cell(row=row_num, column=col_idx, value=value)
+        cell.fill = NOT_INVOICE_FILL
+
+    # Hyperlink "Not an Invoice" in Bill No. column to the source file
+    bill_col = header_map.get('bill no.')
+    if not bill_col:
+        bill_col = COLUMN_INDEX.get('bill_no', 1)
+    if source_path:
+        try:
+            ws.cell(row=row_num, column=bill_col).hyperlink = source_path
+        except Exception:
+            pass
+
+    wb.save(filepath)
 
 
 def read_spreadsheet_rows(filepath):
