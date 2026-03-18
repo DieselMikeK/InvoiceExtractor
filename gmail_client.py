@@ -1,5 +1,7 @@
 """Gmail API client for fetching emails and downloading attachments."""
 import os
+import io
+import csv
 import base64
 import pickle
 import time
@@ -9,8 +11,12 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/drive.file',
+]
 
 PROCESSED_LABEL_NAME = "InvoiceExtractor-Processed"
 
@@ -137,6 +143,7 @@ class GmailClient:
                 )
                 should_persist_token = True
 
+        self.creds = creds
         self.service = build('gmail', 'v1', credentials=creds)
 
         profile = retry_with_backoff(
@@ -394,3 +401,76 @@ class GmailClient:
             f"{new_count} new emails.", "success"
         )
         return downloaded_files, total_emails, new_count
+
+
+HISTORY_FILENAME = 'invoice_history.csv'
+HISTORY_FIELDNAMES = ['bill_no', 'po_number', 'vendor', 'invoice_date', 'downloaded_at', 'source_file']
+
+
+class DriveHistoryClient:
+    """Reads and writes the shared invoice_history.csv on Google Drive."""
+
+    def __init__(self, creds, status_callback=None):
+        self.service = build('drive', 'v3', credentials=creds)
+        self.status_callback = status_callback or (lambda msg, tag=None: None)
+        self._file_id = None
+
+    def _get_or_create_file_id(self):
+        if self._file_id:
+            return self._file_id
+        # Search for existing file in Drive root
+        results = self.service.files().list(
+            q=f"name='{HISTORY_FILENAME}' and 'root' in parents and trashed=false",
+            spaces='drive',
+            fields='files(id, name)',
+        ).execute()
+        files = results.get('files', [])
+        if files:
+            self._file_id = files[0]['id']
+        else:
+            # Create empty CSV with header
+            content = ','.join(HISTORY_FIELDNAMES) + '\n'
+            media = MediaIoBaseUpload(
+                io.BytesIO(content.encode('utf-8')),
+                mimetype='text/csv',
+                resumable=False
+            )
+            meta = {'name': HISTORY_FILENAME, 'parents': ['root']}
+            f = self.service.files().create(body=meta, media_body=media, fields='id').execute()
+            self._file_id = f['id']
+        return self._file_id
+
+    def download_rows(self):
+        """Download invoice_history.csv from Drive and return list of dicts."""
+        try:
+            file_id = self._get_or_create_file_id()
+            request = self.service.files().get_media(fileId=file_id)
+            buf = io.BytesIO()
+            downloader = MediaIoBaseDownload(buf, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            buf.seek(0)
+            reader = csv.DictReader(io.TextIOWrapper(buf, encoding='utf-8'))
+            return [{k: (v or '').strip() for k, v in row.items()} for row in reader]
+        except Exception as e:
+            self.status_callback(f"Warning: could not read remote invoice history ({e})", "warning")
+            return []
+
+    def upload_rows(self, rows):
+        """Upload rows (list of dicts) as invoice_history.csv to Drive, replacing the existing file."""
+        try:
+            file_id = self._get_or_create_file_id()
+            buf = io.StringIO()
+            writer = csv.DictWriter(buf, fieldnames=HISTORY_FIELDNAMES)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({k: row.get(k, '') for k in HISTORY_FIELDNAMES})
+            media = MediaIoBaseUpload(
+                io.BytesIO(buf.getvalue().encode('utf-8')),
+                mimetype='text/csv',
+                resumable=False
+            )
+            self.service.files().update(fileId=file_id, media_body=media).execute()
+        except Exception as e:
+            self.status_callback(f"Warning: could not update remote invoice history ({e})", "warning")

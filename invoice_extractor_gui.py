@@ -17,9 +17,6 @@ import tkinter.font as tkfont
 import time
 import ctypes
 import shutil
-import urllib.request
-import urllib.error
-import subprocess
 from datetime import datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -36,6 +33,7 @@ except Exception:
 
 from gmail_client import (
     GmailClient,
+    DriveHistoryClient,
     PROCESSED_LABEL_NAME,
     WrongAuthorizedAccountError
 )
@@ -50,10 +48,6 @@ from spreadsheet_writer import (
 )
 from skunexus_client import SkuNexusClient, validate_po_row
 from shopify_client import ShopifyClient
-
-APP_VERSION = "1.1.12"
-GITHUB_REPO = "DieselMikeK/InvoiceExtractor"
-GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 # Batch export settings (easy to change)
 # QuickBooks import appears to cap CSV files at ~100 total lines.
@@ -335,109 +329,6 @@ class InvoiceExtractorGUI:
         self._calendar_suppress_until = 0.0
 
         self.build_ui()
-        self._update_banner = None
-        self.root.after(2000, self._check_for_update_async)
-
-    def _check_for_update_async(self):
-        """Kick off update check in background thread so it never blocks the UI."""
-        threading.Thread(target=self._check_for_update, daemon=True).start()
-
-    def _check_for_update(self):
-        """Check GitHub releases for a newer version and show banner if found."""
-        try:
-            req = urllib.request.Request(
-                GITHUB_API_URL,
-                headers={'User-Agent': 'InvoiceExtractor-UpdateCheck'}
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode())
-            latest_tag = data.get('tag_name', '').lstrip('v')
-            if not latest_tag:
-                return
-            # Find the exe asset download URL
-            download_url = None
-            for asset in data.get('assets', []):
-                if asset.get('name', '').lower().endswith('.exe'):
-                    download_url = asset.get('browser_download_url')
-                    break
-            if self._version_tuple(latest_tag) > self._version_tuple(APP_VERSION):
-                self.root.after(0, lambda: self._show_update_banner(latest_tag, download_url))
-        except Exception:
-            pass  # Silently ignore — no internet, timeout, etc.
-
-    def _version_tuple(self, version_str):
-        try:
-            return tuple(int(x) for x in version_str.split('.'))
-        except Exception:
-            return (0,)
-
-    def _show_update_banner(self, latest_version, download_url=None):
-        """Show a non-intrusive update banner below the header."""
-        if self._update_banner:
-            return
-        banner = tk.Frame(self.root, bg='#1a6b3a', pady=4)
-        banner.place(relx=0, rely=0, relwidth=1, anchor='nw')
-        msg = tk.Label(
-            banner,
-            text=f"  Update available: v{latest_version}  —  You have v{APP_VERSION}",
-            bg='#1a6b3a', fg='white',
-            font=('Segoe UI', 9)
-        )
-        msg.pack(side=tk.LEFT, padx=(8, 4))
-        btn = tk.Button(
-            banner,
-            text="Update Now",
-            bg='#145228', fg='white',
-            font=('Segoe UI', 9, 'bold'),
-            relief='flat', cursor='hand2',
-            command=lambda: self._do_update(latest_version, download_url)
-        )
-        btn.pack(side=tk.LEFT, padx=4)
-        dismiss = tk.Button(
-            banner,
-            text="✕",
-            bg='#1a6b3a', fg='white',
-            font=('Segoe UI', 9),
-            relief='flat', cursor='hand2',
-            command=lambda: (banner.place_forget(), setattr(self, '_update_banner', None))
-        )
-        dismiss.pack(side=tk.RIGHT, padx=8)
-        self._update_banner = banner
-
-    def _do_update(self, latest_version, download_url=None):
-        """Launch updater.py via the bundled Python to download and swap the exe."""
-        if self._update_banner:
-            self._update_banner.destroy()
-            self._update_banner = None
-
-        if not download_url:
-            tk.messagebox.showerror(
-                "Update Failed",
-                "Could not find the download URL for this release.\n"
-                "Please download the update manually from GitHub."
-            )
-            return
-
-        # updater.py is bundled in the exe's _MEIPASS temp dir (frozen) or in app/update/ (dev)
-        updater_script = get_resource_path(os.path.join('update', 'updater.py'))
-        if not os.path.exists(updater_script):
-            # fallback: look in app/update/ on disk
-            updater_script = os.path.join(self.app_dir, 'update', 'updater.py')
-        if not os.path.exists(updater_script):
-            tk.messagebox.showerror("Update Failed", f"updater.py not found at:\n{updater_script}")
-            return
-
-        # exe_path: the actual exe on disk (not the _MEIPASS temp copy)
-        if getattr(sys, 'frozen', False):
-            exe_path = sys.executable
-        else:
-            exe_path = os.path.join(self.base_dir, 'InvoiceExtractor.exe')
-
-        subprocess.Popen(
-            [sys.executable, updater_script, APP_VERSION, latest_version, download_url, exe_path],
-            creationflags=subprocess.CREATE_NEW_CONSOLE
-        )
-        self.root.destroy()
 
     def _get_next_run_paths(self):
         """Pick the next available output file and invoices folder (same suffix)."""
@@ -547,7 +438,14 @@ class InvoiceExtractorGUI:
     def _history_log_path(self):
         return os.path.join(self.required_dir, 'invoice_history.csv')
 
-    def _load_invoice_history(self):
+    def _load_invoice_history(self, drive_client=None):
+        """Load invoice history from Drive (preferred) or local fallback."""
+        if drive_client is not None:
+            rows = drive_client.download_rows()
+            if rows:
+                self._save_local_history(rows)
+                return rows
+        # Local fallback
         path = self._history_log_path()
         if not os.path.exists(path):
             return []
@@ -561,22 +459,41 @@ class InvoiceExtractorGUI:
             self.log(f"Warning: could not read invoice history ({e})", "warning")
         return rows
 
-    def _append_invoice_history(self, entries):
+    def _save_local_history(self, rows):
+        """Write rows to local invoice_history.csv as a cache."""
+        from gmail_client import HISTORY_FIELDNAMES
+        path = self._history_log_path()
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=HISTORY_FIELDNAMES)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow({k: row.get(k, '') for k in HISTORY_FIELDNAMES})
+        except Exception as e:
+            self.log(f"Warning: could not cache invoice history locally ({e})", "warning")
+
+    def _append_invoice_history(self, entries, drive_client=None):
+        """Append new entries to Drive history (preferred) and local fallback."""
         if not entries:
             return
+        from gmail_client import HISTORY_FIELDNAMES
+        if drive_client is not None:
+            # Download fresh, merge, upload
+            existing = drive_client.download_rows()
+            existing.extend(entries)
+            drive_client.upload_rows(existing)
+            self._save_local_history(existing)
+            return
+        # Local fallback
         path = self._history_log_path()
-        fieldnames = [
-            'bill_no', 'po_number', 'vendor', 'invoice_date',
-            'downloaded_at', 'source_file'
-        ]
         file_exists = os.path.exists(path)
         try:
             with open(path, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer = csv.DictWriter(f, fieldnames=HISTORY_FIELDNAMES)
                 if not file_exists:
                     writer.writeheader()
                 for entry in entries:
-                    writer.writerow({k: entry.get(k, '') for k in fieldnames})
+                    writer.writerow({k: entry.get(k, '') for k in HISTORY_FIELDNAMES})
         except Exception as e:
             self.log(f"Warning: could not update invoice history ({e})", "warning")
 
@@ -1066,17 +983,6 @@ class InvoiceExtractorGUI:
             except Exception:
                 self.header_image = None
 
-        # Version label — top right corner
-        version_label = tk.Label(
-            main_frame,
-            text=f"v{APP_VERSION}",
-            font=('Segoe UI', 8),
-            fg='#888888',
-            bg=self.root.cget('bg'),
-            anchor='e'
-        )
-        version_label.place(relx=1.0, y=0, anchor='ne')
-
         # Fallback title text if image isn't available
         if self.header_label is None:
             title_label = ttk.Label(
@@ -1467,6 +1373,7 @@ class InvoiceExtractorGUI:
                 expected_email=AUTHORIZED_GMAIL_ACCOUNT
             )
             client.authenticate()
+            drive_client = DriveHistoryClient(client.creds, status_callback=self.log)
 
             if not self.is_running:
                 self.finish("Stopped by user.")
@@ -1508,7 +1415,7 @@ class InvoiceExtractorGUI:
                     return ''
                 return '|'.join([p.lower() for p in parts])
 
-            history_rows = self._load_invoice_history()
+            history_rows = self._load_invoice_history(drive_client=drive_client)
             history_by_po = {}
             history_by_bill = {}
             history_keys = set()
@@ -1621,7 +1528,7 @@ class InvoiceExtractorGUI:
                     else:
                         self.log("Duplicate invoices flagged: 0.")
                 if new_history_entries:
-                    self._append_invoice_history(new_history_entries)
+                    self._append_invoice_history(new_history_entries, drive_client=drive_client)
 
                 # Summary
                 self.log("")
