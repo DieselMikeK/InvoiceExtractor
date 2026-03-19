@@ -12,11 +12,12 @@ import csv
 import re
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 import tkinter.font as tkfont
 import time
 import ctypes
 import shutil
+import subprocess
 from datetime import datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -49,6 +50,13 @@ from spreadsheet_writer import (
 )
 from skunexus_client import SkuNexusClient, validate_po_row
 from shopify_client import ShopifyClient
+from update_utils import (
+    MAIN_EXECUTABLE_NAME,
+    fetch_release_manifest,
+    load_app_version,
+    parse_version_tuple,
+    stage_updater_executable,
+)
 
 # Batch export settings (easy to change)
 # QuickBooks import appears to cap CSV files at ~100 total lines.
@@ -328,8 +336,156 @@ class InvoiceExtractorGUI:
         self._calendar_warned = False
         self._calendar_suppress_widget = None
         self._calendar_suppress_until = 0.0
+        self.app_version = load_app_version()
+        self.available_update = None
+        self.update_button = None
+        self._update_button_visible = False
+        self.version_var = tk.StringVar(value=f"v{self.app_version}")
 
         self.build_ui()
+        self.root.after(2000, self._check_for_updates_async)
+
+    def _get_update_target_exe_path(self):
+        """Return the executable path that should be replaced during updates."""
+        if getattr(sys, 'frozen', False):
+            return sys.executable
+
+        candidates = [
+            os.path.join(self.base_dir, 'dist', MAIN_EXECUTABLE_NAME),
+            os.path.join(self.base_dir, MAIN_EXECUTABLE_NAME),
+            os.path.join(os.path.dirname(self.base_dir), MAIN_EXECUTABLE_NAME),
+        ]
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        return ''
+
+    def _check_for_updates_async(self):
+        """Check the remote release manifest without blocking the UI."""
+        if not self._get_update_target_exe_path():
+            return
+        threading.Thread(target=self._check_for_updates, daemon=True).start()
+
+    def _check_for_updates(self):
+        """Load update metadata and surface the update button when needed."""
+        try:
+            manifest = fetch_release_manifest(self.required_dir)
+        except Exception as exc:
+            # Network failures are expected sometimes; malformed manifests are worth logging.
+            if isinstance(exc, (ValueError, json.JSONDecodeError)):
+                self.root.after(0, lambda: self.log(f"Update check failed: {exc}", "warning"))
+            return
+
+        has_download = bool(str(manifest.get('download_url') or '').strip())
+        current_tuple = parse_version_tuple(self.app_version)
+        latest_tuple = parse_version_tuple(manifest.get('version'))
+        if latest_tuple > current_tuple and has_download:
+            self.root.after(0, lambda: self._set_available_update(manifest))
+            return
+
+        if latest_tuple > current_tuple and not has_download:
+            self.root.after(
+                0,
+                lambda: self.log(
+                    "Update manifest found a newer version but no download URL was provided.",
+                    "warning",
+                )
+            )
+        self.root.after(0, lambda: self._set_available_update(None))
+
+    def _set_available_update(self, manifest):
+        """Show or hide the update button based on the available release manifest."""
+        self.available_update = manifest
+        if self.update_button is None:
+            return
+
+        if manifest:
+            self.update_button.configure(text=f"Update to v{manifest['version']}")
+            if not self._update_button_visible:
+                self.update_button.pack(side=tk.RIGHT, padx=(0, 8))
+                self._update_button_visible = True
+        elif self._update_button_visible:
+            self.update_button.pack_forget()
+            self._update_button_visible = False
+
+        self._refresh_update_button_state()
+
+    def _refresh_update_button_state(self):
+        """Enable the update button only when an update is available and the app is idle."""
+        if self.update_button is None:
+            return
+        if not self.available_update or not self._update_button_visible:
+            return
+        state = tk.DISABLED if self.is_running else tk.NORMAL
+        self.update_button.configure(state=state)
+
+    def _on_update_clicked(self):
+        """Confirm and launch the external updater helper."""
+        if not self.available_update:
+            return
+        if self.is_running:
+            messagebox.showwarning(
+                "Update Unavailable",
+                "Stop the current job before running the updater.",
+            )
+            return
+
+        manifest = self.available_update
+        lines = [
+            f"Install Invoice Extractor v{manifest['version']} now?",
+            f"Current version: v{self.app_version}",
+        ]
+        notes = str(manifest.get('notes') or '').strip()
+        if notes:
+            lines.extend(['', 'Release notes:', notes])
+
+        if not messagebox.askyesno("Update Available", "\n".join(lines), parent=self.root):
+            return
+
+        target_exe = self._get_update_target_exe_path()
+        if not target_exe:
+            messagebox.showerror(
+                "Update Failed",
+                "Could not determine which InvoiceExtractor.exe should be updated.",
+                parent=self.root,
+            )
+            return
+
+        try:
+            updater_exe = stage_updater_executable(self.app_version)
+        except Exception as exc:
+            messagebox.showerror(
+                "Update Failed",
+                f"Could not prepare the updater helper.\n\n{exc}",
+                parent=self.root,
+            )
+            return
+
+        args = [
+            updater_exe,
+            '--current-exe', target_exe,
+            '--download-url', manifest['download_url'],
+            '--target-version', manifest['version'],
+            '--source-version', self.app_version,
+            '--wait-pid', str(os.getpid()),
+        ]
+        expected_hash = str(manifest.get('sha256') or '').strip()
+        if expected_hash:
+            args.extend(['--sha256', expected_hash])
+
+        try:
+            self.update_button.configure(state=tk.DISABLED)
+            subprocess.Popen(args, cwd=os.path.dirname(target_exe) or None)
+        except Exception as exc:
+            self._refresh_update_button_state()
+            messagebox.showerror(
+                "Update Failed",
+                f"Could not launch the updater helper.\n\n{exc}",
+                parent=self.root,
+            )
+            return
+
+        self.root.destroy()
 
     def _get_next_run_paths(self):
         """Pick the next available output file and invoices folder (same suffix)."""
@@ -964,6 +1120,22 @@ class InvoiceExtractorGUI:
         main_frame = ttk.Frame(self.root, padding=15)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
+        top_bar = ttk.Frame(main_frame)
+        top_bar.pack(fill=tk.X, pady=(0, 2))
+
+        version_label = ttk.Label(
+            top_bar,
+            textvariable=self.version_var,
+            foreground='#888888'
+        )
+        version_label.pack(side=tk.RIGHT)
+
+        self.update_button = ttk.Button(
+            top_bar,
+            text="Update Available",
+            command=self._on_update_clicked
+        )
+
         # Header image (centered)
         self.header_path = get_resource_path('header.png')
         if os.path.exists(self.header_path):
@@ -1338,6 +1510,7 @@ class InvoiceExtractorGUI:
         self.is_running = True
         self.go_button.config(state=tk.DISABLED)
         self.stop_button.config(state=tk.NORMAL)
+        self._refresh_update_button_state()
 
         # Clear log
         self.log_text.config(state=tk.NORMAL)
@@ -1572,6 +1745,7 @@ class InvoiceExtractorGUI:
             self.is_running = False
             self.go_button.config(state=tk.NORMAL)
             self.stop_button.config(state=tk.DISABLED)
+            self._refresh_update_button_state()
             self.set_progress(100, message)
             self.log(message, "info")
             self._refresh_batch_buttons()
@@ -1730,6 +1904,7 @@ class InvoiceExtractorGUI:
         self.go_button.config(state=tk.DISABLED)
         self.stop_button.config(state=tk.NORMAL)
         self.validate_button.config(state=tk.DISABLED)
+        self._refresh_update_button_state()
 
         # Clear log
         self.log_text.config(state=tk.NORMAL)
@@ -2302,6 +2477,7 @@ class InvoiceExtractorGUI:
             self.go_button.config(state=tk.NORMAL)
             self.stop_button.config(state=tk.DISABLED)
             self.validate_button.config(state=tk.NORMAL)
+            self._refresh_update_button_state()
             self.set_progress(100, message)
             self.log(message, "info")
             self._refresh_batch_buttons()

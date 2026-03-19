@@ -20,6 +20,8 @@ training_output*.xlsx
 processed_log.json
 invoice_history.csv
 training/outputs/
+required/
+update/
 
 # Training PDFs (large, not needed in repo)
 training/
