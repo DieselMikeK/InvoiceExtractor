@@ -1,7 +1,9 @@
 param(
-    [string]$Ref = 'main',
+    [string]$Version = '',
     [string]$Notes = '',
-    [switch]$NoWait
+    [string]$Remote = 'origin',
+    [string]$Branch = 'main',
+    [switch]$NoPush
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,70 +12,59 @@ Set-StrictMode -Version Latest
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $repoRoot
 
-$null = Get-Command gh -ErrorAction Stop
-
-Write-Host "Checking GitHub CLI authentication..."
-gh auth status
+$currentBranch = (git branch --show-current).Trim()
 if ($LASTEXITCODE -ne 0) {
-    throw "GitHub CLI is not authenticated. Run 'gh auth login' once on this machine."
+    throw "Failed to determine the current git branch."
+}
+if ($currentBranch -ne $Branch) {
+    throw "Current branch is '$currentBranch'. Checkout '$Branch' before requesting a release."
 }
 
-Write-Host "Dispatching release workflow for ref '$Ref'..."
-if ([string]::IsNullOrWhiteSpace($Notes)) {
-    gh workflow run release.yml --ref $Ref
-} else {
-    gh workflow run release.yml --ref $Ref -f "notes=$Notes"
-}
+$statusLines = @(git status --porcelain)
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to dispatch the release workflow."
+    throw "Failed to inspect git status."
+}
+if ($statusLines.Count -gt 0) {
+    throw "Working tree must be clean before requesting a release. Push normal code changes first."
 }
 
-if ($NoWait) {
-    Write-Host "Release workflow submitted."
+$versionPath = Join-Path $repoRoot 'VERSION'
+$releaseVersion = (Get-Content $versionPath -Raw).Trim()
+if (-not [string]::IsNullOrWhiteSpace($Version)) {
+    $releaseVersion = $Version.Trim()
+    Set-Content -Path $versionPath -Value $releaseVersion -Encoding ascii
+}
+if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
+    throw "VERSION is empty."
+}
+
+$requestPath = Join-Path $repoRoot 'release_request.json'
+$requestPayload = [ordered]@{
+    notes        = $Notes.Trim()
+    requested_at = (Get-Date).ToUniversalTime().ToString('o')
+}
+$requestPayload | ConvertTo-Json | Set-Content -Path $requestPath -Encoding UTF8
+
+git add VERSION release_request.json
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to stage the release request."
+}
+
+git commit -m "Request release v$releaseVersion"
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create the release request commit."
+}
+
+if ($NoPush) {
+    Write-Host "Release request commit created locally."
     exit 0
 }
 
-Start-Sleep -Seconds 5
-
-$runId = $null
-$runUrl = ''
-
-for ($attempt = 1; $attempt -le 12 -and -not $runId; $attempt++) {
-    $runs = gh run list `
-        --workflow release.yml `
-        --branch $Ref `
-        --limit 5 `
-        --json databaseId,createdAt,event,status,url | ConvertFrom-Json
-
-    $run = $runs |
-        Where-Object { $_.event -eq 'workflow_dispatch' } |
-        Sort-Object createdAt -Descending |
-        Select-Object -First 1
-
-    if ($run) {
-        $runId = [string]$run.databaseId
-        $runUrl = [string]$run.url
-        break
-    }
-
-    Start-Sleep -Seconds 5
-}
-
-if (-not $runId) {
-    throw "The workflow was dispatched, but no matching run was found."
-}
-
-Write-Host "Watching GitHub Actions run $runId..."
-gh run watch $runId --exit-status
+Write-Host "Pushing release request to $Remote/$Branch..."
+git push $Remote $Branch
 if ($LASTEXITCODE -ne 0) {
-    if ($runUrl) {
-        throw "Release workflow failed. See $runUrl"
-    }
-    throw "Release workflow failed."
+    throw "Failed to push the release request."
 }
 
-if ($runUrl) {
-    Write-Host "Release completed successfully: $runUrl"
-} else {
-    Write-Host "Release completed successfully."
-}
+Write-Host "Release requested for v$releaseVersion."
+Write-Host "GitHub Actions will build the executables, create the release, and update docs\\release.json."

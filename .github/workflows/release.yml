@@ -2,11 +2,11 @@ name: Publish Release
 
 on:
   workflow_dispatch:
-    inputs:
-      notes:
-        description: Release notes shown in GitHub and the in-app updater
-        required: false
-        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - release_request.json
 
 permissions:
   contents: write
@@ -58,9 +58,18 @@ jobs:
 
           $sha256 = (Get-FileHash -Algorithm SHA256 $mainExe).Hash.ToLowerInvariant()
           $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/InvoiceExtractor.exe"
-          $notes = @'
-${{ github.event.inputs.notes }}
-'@.Trim()
+          $requestNotes = ''
+          $requestPath = Join-Path $PWD 'release_request.json'
+          if (Test-Path $requestPath) {
+              try {
+                  $request = Get-Content -Path $requestPath -Raw | ConvertFrom-Json
+                  $requestNotes = [string]($request.notes)
+              } catch {
+                  throw "release_request.json is not valid JSON."
+              }
+          }
+
+          $notes = $requestNotes.Trim()
           if ([string]::IsNullOrWhiteSpace($notes)) {
               $notes = "Invoice Extractor $version"
           }

@@ -4,7 +4,6 @@
 
 1. In GitHub repo settings, enable Actions and set workflow permissions to `Read and write`.
 2. If `main` is branch-protected, allow GitHub Actions to push to it or this workflow will publish the exe but fail to update [docs/release.json](./docs/release.json).
-3. On this computer, sign into GitHub CLI once with `gh auth login`.
 
 ### Normal release flow
 
@@ -12,8 +11,9 @@
 2. Change [VERSION](./VERSION) before that push if you want a new release number.
 3. Run `.\publish_release.ps1` from the repo root.
 4. Optionally pass notes with `.\publish_release.ps1 -Notes "What changed"`.
+5. Optionally let the script bump the version for the release commit with `.\publish_release.ps1 -Version 1.2.1 -Notes "What changed"`.
 
-That command dispatches `.github/workflows/release.yml`, which:
+That command updates [release_request.json](./release_request.json), commits it, and pushes it to `main`. The `.github/workflows/release.yml` workflow watches that file and then:
 
 - builds `InvoiceExtractorUpdater.exe` and `InvoiceExtractor.exe`
 - creates GitHub release `v<version>`
@@ -26,4 +26,9 @@ Handoff layout after `.\build_release.ps1`:
 - `app\required\...`
 - `app\update\InvoiceExtractorUpdater.exe`
 
-Normal pushes do not trigger client updates. The only client-visible release signal is [docs/release.json](./docs/release.json), and that file is only updated by the release workflow. Clients only see the `Update` button when the remote manifest version in [docs/release.json](./docs/release.json) is newer than their local [VERSION](./VERSION).
+Normal pushes do not trigger client updates. There are two separate files involved:
+
+- [release_request.json](./release_request.json): the release trigger file that tells GitHub Actions to publish a release
+- [docs/release.json](./docs/release.json): the client-visible manifest that makes installed apps show the `Update` button
+
+Clients only see the `Update` button when the remote manifest version in [docs/release.json](./docs/release.json) is newer than their local [VERSION](./VERSION).
