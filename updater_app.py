@@ -1,14 +1,23 @@
 """Standalone updater helper for swapping in a new InvoiceExtractor.exe."""
 
 import argparse
+import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import tkinter as tk
 from tkinter import ttk
 
-from update_utils import APP_NAME, compute_file_sha256, get_resource_path
+from update_utils import (
+    APP_NAME,
+    MAIN_EXECUTABLE_NAME,
+    compute_file_sha256,
+    get_resource_path,
+    normalize_release_manifest,
+)
 
 try:
     import ctypes
@@ -26,6 +35,7 @@ FILE_UNLOCK_TIMEOUT_SECONDS = 45
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Invoice Extractor updater")
     parser.add_argument("--current-exe", required=True, help="Path to the installed InvoiceExtractor.exe")
+    parser.add_argument("--manifest-file", default="", help="Path to a release manifest file")
     parser.add_argument("--download-url", required=True, help="URL of the replacement executable")
     parser.add_argument("--target-version", required=True, help="Version being installed")
     parser.add_argument("--source-version", default="", help="Version currently installed")
@@ -59,9 +69,10 @@ class UpdaterWindow:
     def __init__(self, args):
         self.args = args
         self.target_exe = os.path.abspath(args.current_exe)
-        self.target_dir = os.path.dirname(self.target_exe)
-        self.download_path = self.target_exe + ".download"
-        self.backup_path = self.target_exe + ".bak"
+        self.install_root = os.path.dirname(self.target_exe)
+        self.target_dir = self.install_root
+        self.staging_dir = tempfile.mkdtemp(prefix="InvoiceExtractorUpdate-")
+        self.release_files = self._load_release_files()
 
         self.root = tk.Tk()
         self.root.title(f"{APP_NAME} Updater")
@@ -169,25 +180,79 @@ class UpdaterWindow:
 
     def _perform_update(self):
         try:
-            self._download_new_exe()
+            self._download_release_files()
             self._wait_for_app_exit()
-            self._install_download()
+            self._install_release_files()
             self._finish_success()
         except Exception as exc:
             self._cleanup_partial_files()
             self.set_status(f"Update failed: {exc}")
             self.allow_close()
 
-    def _download_new_exe(self):
-        self.set_status("Downloading update...")
+    def _resolve_target_path(self, relative_path):
+        normalized = str(relative_path or "").replace("\\", "/").strip()
+        parts = [part for part in normalized.split("/") if part and part != "."]
+        if not parts or any(part == ".." for part in parts):
+            raise RuntimeError(f"Invalid release target path '{relative_path}'.")
+        target_path = os.path.abspath(os.path.join(self.install_root, *parts))
+        if os.path.commonpath([self.install_root, target_path]) != self.install_root:
+            raise RuntimeError(f"Release target path '{relative_path}' is outside the install folder.")
+        return target_path
+
+    def _build_release_entry(self, relative_path, download_url, sha256):
+        target_path = self._resolve_target_path(relative_path)
+        return {
+            "relative_path": str(relative_path).replace("\\", "/"),
+            "download_url": str(download_url or "").strip(),
+            "sha256": str(sha256 or "").strip().lower(),
+            "target_path": target_path,
+            "staged_path": os.path.join(
+                self.staging_dir,
+                *str(relative_path).replace("\\", "/").split("/"),
+            ),
+            "backup_path": target_path + ".bak",
+            "is_main_exe": os.path.abspath(target_path) == self.target_exe,
+        }
+
+    def _load_release_files(self):
+        manifest_path = str(self.args.manifest_file or "").strip()
+        release_files = []
+
+        if manifest_path:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = normalize_release_manifest(json.load(f), source_url=manifest_path)
+            release_files.extend(
+                self._build_release_entry(
+                    entry["relative_path"],
+                    entry.get("download_url"),
+                    entry.get("sha256"),
+                )
+                for entry in manifest.get("files") or []
+            )
+
+        if not any(entry["is_main_exe"] for entry in release_files):
+            release_files.append(
+                self._build_release_entry(
+                    MAIN_EXECUTABLE_NAME,
+                    self.args.download_url,
+                    self.args.sha256,
+                )
+            )
+
+        return release_files
+
+    def _download_one_file(self, entry, progress_start, progress_span):
+        display_name = entry["relative_path"].replace("/", "\\")
+        self.set_status(f"Downloading {display_name}...")
         req = urllib.request.Request(
-            self.args.download_url,
+            entry["download_url"],
             headers={"User-Agent": "InvoiceExtractorUpdater/1.0"},
         )
+        os.makedirs(os.path.dirname(entry["staged_path"]), exist_ok=True)
         with urllib.request.urlopen(req, timeout=60) as response:
             total_bytes = int(response.headers.get("Content-Length") or 0)
             downloaded_bytes = 0
-            with open(self.download_path, "wb") as f:
+            with open(entry["staged_path"], "wb") as f:
                 while True:
                     chunk = response.read(DOWNLOAD_CHUNK_SIZE)
                     if not chunk:
@@ -195,59 +260,106 @@ class UpdaterWindow:
                     f.write(chunk)
                     downloaded_bytes += len(chunk)
                     if total_bytes > 0:
-                        percent = min(85, int(downloaded_bytes * 85 / total_bytes))
+                        percent = min(
+                            progress_start + progress_span,
+                            progress_start + int(downloaded_bytes * progress_span / total_bytes),
+                        )
                         self.set_progress(percent)
                         self.set_status(
-                            "Downloading update... "
+                            f"Downloading {display_name}... "
                             f"{downloaded_bytes / 1_048_576:.1f} / {total_bytes / 1_048_576:.1f} MB"
                         )
                     else:
                         self.set_status(
-                            f"Downloading update... {downloaded_bytes / 1_048_576:.1f} MB"
+                            f"Downloading {display_name}... {downloaded_bytes / 1_048_576:.1f} MB"
                         )
 
-        expected_hash = (self.args.sha256 or "").strip().lower()
+        expected_hash = str(entry.get("sha256") or "").strip().lower()
         if expected_hash:
-            self.set_status("Verifying download...")
-            actual_hash = compute_file_sha256(self.download_path)
+            self.set_status(f"Verifying {display_name}...")
+            actual_hash = compute_file_sha256(entry["staged_path"])
             if actual_hash.lower() != expected_hash:
-                raise RuntimeError("downloaded file hash does not match release manifest")
+                raise RuntimeError(f"{display_name} hash does not match the release manifest")
+
+    def _download_release_files(self):
+        file_count = max(1, len(self.release_files))
+        progress_span = max(1, 85 // file_count)
+        for index, entry in enumerate(self.release_files):
+            start = index * progress_span
+            self._download_one_file(entry, start, progress_span)
         self.set_progress(88)
 
     def _wait_for_app_exit(self):
         self.set_status("Waiting for Invoice Extractor to close...")
         wait_for_process_exit(self.args.wait_pid, PROCESS_WAIT_TIMEOUT_SECONDS)
 
-    def _install_download(self):
-        if not os.path.exists(self.download_path):
-            raise RuntimeError("downloaded update was not found")
+    def _install_one_file(self, entry):
+        if not os.path.exists(entry["staged_path"]):
+            raise RuntimeError(f"Downloaded file was not found for {entry['relative_path']}")
 
-        if os.path.exists(self.backup_path):
-            os.remove(self.backup_path)
+        os.makedirs(os.path.dirname(entry["target_path"]), exist_ok=True)
+        if os.path.exists(entry["backup_path"]):
+            os.remove(entry["backup_path"])
 
+        had_existing_file = os.path.exists(entry["target_path"])
         deadline = time.time() + FILE_UNLOCK_TIMEOUT_SECONDS
         while True:
             try:
-                self.set_status("Installing update...")
-                self.set_progress(94)
-                if os.path.exists(self.target_exe):
-                    os.replace(self.target_exe, self.backup_path)
-                os.replace(self.download_path, self.target_exe)
-                break
+                if had_existing_file:
+                    os.replace(entry["target_path"], entry["backup_path"])
+                os.replace(entry["staged_path"], entry["target_path"])
+                return had_existing_file
             except PermissionError:
-                if time.time() >= deadline:
-                    raise RuntimeError("existing app is still locked after waiting")
+                if not entry["is_main_exe"] or time.time() >= deadline:
+                    raise RuntimeError(
+                        f"{entry['relative_path'].replace('/', chr(92))} is still locked after waiting"
+                    )
                 time.sleep(0.5)
             except Exception:
-                if os.path.exists(self.backup_path) and not os.path.exists(self.target_exe):
-                    os.replace(self.backup_path, self.target_exe)
+                if had_existing_file and os.path.exists(entry["backup_path"]) and not os.path.exists(entry["target_path"]):
+                    os.replace(entry["backup_path"], entry["target_path"])
                 raise
 
-        if os.path.exists(self.backup_path):
+    def _restore_file(self, entry, had_existing_file):
+        if os.path.exists(entry["target_path"]):
             try:
-                os.remove(self.backup_path)
+                os.remove(entry["target_path"])
             except OSError:
                 pass
+        if had_existing_file and os.path.exists(entry["backup_path"]):
+            try:
+                os.replace(entry["backup_path"], entry["target_path"])
+            except OSError:
+                pass
+
+    def _install_release_files(self):
+        ordered_files = [
+            entry for entry in self.release_files if not entry["is_main_exe"]
+        ] + [
+            entry for entry in self.release_files if entry["is_main_exe"]
+        ]
+        applied_files = []
+
+        try:
+            for index, entry in enumerate(ordered_files, start=1):
+                display_name = entry["relative_path"].replace("/", "\\")
+                self.set_status(f"Installing {display_name}...")
+                self.set_progress(88 + min(11, index * 10 // max(1, len(ordered_files))))
+                had_existing_file = self._install_one_file(entry)
+                applied_files.append((entry, had_existing_file))
+        except Exception:
+            for entry, had_existing_file in reversed(applied_files):
+                self._restore_file(entry, had_existing_file)
+            raise
+        finally:
+            for entry, _had_existing_file in applied_files:
+                if os.path.exists(entry["backup_path"]):
+                    try:
+                        os.remove(entry["backup_path"])
+                    except OSError:
+                        pass
+
+        self._cleanup_partial_files()
         self.set_progress(100)
 
     def _finish_success(self):
@@ -263,12 +375,8 @@ class UpdaterWindow:
         self.root.after(0, self.root.destroy)
 
     def _cleanup_partial_files(self):
-        for path in (self.download_path,):
-            if os.path.exists(path):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+        if self.staging_dir and os.path.exists(self.staging_dir):
+            shutil.rmtree(self.staging_dir, ignore_errors=True)
 
 
 def main(argv=None):

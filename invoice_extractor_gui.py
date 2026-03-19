@@ -55,6 +55,7 @@ from update_utils import (
     fetch_release_manifest,
     load_app_version,
     parse_version_tuple,
+    stage_release_manifest,
     stage_updater_executable,
 )
 
@@ -85,15 +86,15 @@ def _split_vendor_aliases(value):
 
 
 def load_vendor_aliases(preferred_dir):
-    """Load vendor alias map from vendors.csv (prefer provided dir, fallback to parent)."""
-    path = os.path.join(preferred_dir, 'vendors.csv')
-    if not os.path.exists(path):
-        parent_dir = os.path.dirname(preferred_dir)
-        fallback = os.path.join(parent_dir, 'vendors.csv')
-        if os.path.exists(fallback):
-            path = fallback
-        else:
-            return {}
+    """Load vendor alias map from vendors.csv, preferring external files over the bundled copy."""
+    candidates = [
+        os.path.join(preferred_dir, 'vendors.csv'),
+        os.path.join(os.path.dirname(preferred_dir), 'vendors.csv'),
+        get_resource_path('vendors.csv'),
+    ]
+    path = next((candidate for candidate in candidates if os.path.exists(candidate)), '')
+    if not path:
+        return {}
     try:
         with open(path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
@@ -312,6 +313,7 @@ class InvoiceExtractorGUI:
         self.required_dir = os.path.join(self.app_dir, 'required')
         os.makedirs(self.app_dir, exist_ok=True)
         os.makedirs(self.required_dir, exist_ok=True)
+        self._sync_runtime_app_files()
         self.invoices_root = os.path.join(self.base_dir, 'Invoices')
         self.batches_root = os.path.join(self.base_dir, BATCHES_ROOT_NAME)
         os.makedirs(self.invoices_root, exist_ok=True)
@@ -515,22 +517,26 @@ class InvoiceExtractorGUI:
 
         try:
             updater_exe = stage_updater_executable(self.app_version)
+            manifest_path = stage_release_manifest(manifest, manifest.get('version'))
         except Exception as exc:
             messagebox.showerror(
                 "Update Failed",
-                f"Could not prepare the updater helper.\n\n{exc}",
+                f"Could not prepare the updater files.\n\n{exc}",
                 parent=self.root,
             )
             return
 
+        primary_download_url = str(manifest.get('download_url') or '').strip()
         args = [
             updater_exe,
             '--current-exe', target_exe,
-            '--download-url', manifest['download_url'],
+            '--manifest-file', manifest_path,
             '--target-version', manifest['version'],
             '--source-version', self.app_version,
             '--wait-pid', str(os.getpid()),
         ]
+        if primary_download_url:
+            args.extend(['--download-url', primary_download_url])
         expected_hash = str(manifest.get('sha256') or '').strip()
         if expected_hash:
             args.extend(['--sha256', expected_hash])
@@ -653,6 +659,20 @@ class InvoiceExtractorGUI:
                         except Exception:
                             pass
                     break
+
+    def _sync_runtime_app_files(self):
+        """Refresh curated runtime files that should track the shipped application version."""
+        for name in ('vendors.csv',):
+            source = get_resource_path(name)
+            if not os.path.exists(source):
+                continue
+            destination = os.path.join(self.app_dir, name)
+            if os.path.abspath(source) == os.path.abspath(destination):
+                continue
+            try:
+                shutil.copy2(source, destination)
+            except Exception:
+                pass
 
     def _history_log_path(self):
         return os.path.join(self.required_dir, 'invoice_history.csv')

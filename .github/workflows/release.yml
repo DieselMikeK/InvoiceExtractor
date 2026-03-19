@@ -55,9 +55,11 @@ jobs:
           if (-not (Test-Path $mainExe)) {
               throw "Missing dist\InvoiceExtractor.exe after build."
           }
+          $templatePath = Join-Path $PWD 'dist\release-template.json'
+          if (-not (Test-Path $templatePath)) {
+              throw "Missing dist\release-template.json after build."
+          }
 
-          $sha256 = (Get-FileHash -Algorithm SHA256 $mainExe).Hash.ToLowerInvariant()
-          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/InvoiceExtractor.exe"
           $requestNotes = ''
           $requestPath = Join-Path $PWD 'release_request.json'
           if (Test-Path $requestPath) {
@@ -77,11 +79,52 @@ jobs:
           $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.txt'
           Set-Content -Path $notesPath -Value $notes -Encoding UTF8
 
+          $template = Get-Content -Path $templatePath -Raw | ConvertFrom-Json
+          $downloadBase = "https://github.com/${{ github.repository }}/releases/download/$tag"
+          $finalFiles = [System.Collections.ArrayList]::new()
+          $primaryFile = $null
+
+          foreach ($file in @($template.files)) {
+              $relativePath = [string]$file.relative_path
+              $assetName = [string]$file.asset_name
+              $fileSha256 = [string]$file.sha256
+              if ([string]::IsNullOrWhiteSpace($relativePath) -or [string]::IsNullOrWhiteSpace($assetName)) {
+                  throw "release-template.json contains a file entry without relative_path or asset_name."
+              }
+
+              $entry = [ordered]@{
+                  relative_path = $relativePath
+                  download_url  = "$downloadBase/$assetName"
+                  sha256        = $fileSha256
+              }
+              $null = $finalFiles.Add($entry)
+
+              if ($relativePath -ieq 'InvoiceExtractor.exe') {
+                  $primaryFile = $entry
+              }
+          }
+
+          if (-not $primaryFile) {
+              throw "release-template.json does not contain the primary InvoiceExtractor.exe entry."
+          }
+
+          $manifest = [ordered]@{
+              version      = $version
+              download_url = $primaryFile.download_url
+              sha256       = $primaryFile.sha256
+              notes        = $notes
+              published_at = ''
+              files        = $finalFiles
+          }
+          $manifestPath = Join-Path $env:RUNNER_TEMP 'release-manifest.json'
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
+
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "title=Invoice Extractor v$version" >> $env:GITHUB_OUTPUT
-          "sha256=$sha256" >> $env:GITHUB_OUTPUT
-          "download_url=$downloadUrl" >> $env:GITHUB_OUTPUT
+          "sha256=$($primaryFile.sha256)" >> $env:GITHUB_OUTPUT
+          "download_url=$($primaryFile.download_url)" >> $env:GITHUB_OUTPUT
+          "manifest_file=$manifestPath" >> $env:GITHUB_OUTPUT
           "notes_file=$notesPath" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub release
@@ -89,9 +132,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
+          $assetPaths = [System.Collections.ArrayList]::new()
+          $null = $assetPaths.Add((Join-Path $PWD 'dist\InvoiceExtractor.exe'))
+          $releaseAssetsDir = Join-Path $PWD 'dist\release-assets'
+          if (Test-Path $releaseAssetsDir) {
+              foreach ($asset in Get-ChildItem -Path $releaseAssetsDir -File) {
+                  $null = $assetPaths.Add($asset.FullName)
+              }
+          }
+
           gh release create `
             "${{ steps.meta.outputs.tag }}" `
-            "dist\InvoiceExtractor.exe" `
+            @assetPaths `
             --repo "${{ github.repository }}" `
             --title "${{ steps.meta.outputs.title }}" `
             --notes-file "${{ steps.meta.outputs.notes_file }}"
@@ -113,16 +165,9 @@ jobs:
       - name: Update release manifest
         shell: pwsh
         run: |
-          $notes = (Get-Content -Path "${{ steps.meta.outputs.notes_file }}" -Raw).Trim()
-          $manifest = [ordered]@{
-              version      = "${{ steps.meta.outputs.version }}"
-              download_url = "${{ steps.meta.outputs.download_url }}"
-              sha256       = "${{ steps.meta.outputs.sha256 }}"
-              notes        = $notes
-              published_at = "${{ steps.release.outputs.published_at }}"
-          }
-
-          $manifest | ConvertTo-Json | Set-Content -Path 'docs\release.json' -Encoding UTF8
+          $manifest = Get-Content -Path "${{ steps.meta.outputs.manifest_file }}" -Raw | ConvertFrom-Json
+          $manifest.published_at = "${{ steps.release.outputs.published_at }}"
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path 'docs\release.json' -Encoding UTF8
 
       - name: Commit updated release manifest
         shell: pwsh
@@ -142,5 +187,5 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Release published: ${{ steps.release.outputs.release_url }}"
-          Write-Host "Asset URL: ${{ steps.meta.outputs.download_url }}"
+          Write-Host "Primary asset URL: ${{ steps.meta.outputs.download_url }}"
           Write-Host "SHA-256:  ${{ steps.meta.outputs.sha256 }}"

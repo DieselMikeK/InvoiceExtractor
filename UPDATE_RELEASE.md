@@ -17,8 +17,8 @@ That command updates [release_request.json](./release_request.json), commits it,
 
 - builds `InvoiceExtractorUpdater.exe` and `InvoiceExtractor.exe`
 - creates GitHub release `v<version>`
-- uploads `dist\InvoiceExtractor.exe`
-- updates [docs/release.json](./docs/release.json) with the download URL, SHA-256, notes, and publish time
+- uploads `dist\InvoiceExtractor.exe` plus curated app payload files such as `app\vendors.csv`
+- updates [docs/release.json](./docs/release.json) with the primary exe URL, SHA-256, notes, publish time, and the file list for the updater
 - pushes the manifest commit so client apps see the update button
 
 Handoff layout after `.\build_release.ps1`:
@@ -30,5 +30,7 @@ Normal pushes do not trigger client updates. There are two separate files involv
 
 - [release_request.json](./release_request.json): the release trigger file that tells GitHub Actions to publish a release
 - [docs/release.json](./docs/release.json): the client-visible manifest that makes installed apps show the `Update` button
+
+The updater only downloads the curated file list in [docs/release.json](./docs/release.json). User-specific folders such as `required\`, and development folders such as `build\` and `training\`, are intentionally excluded from release updates.
 
 Clients only see the `Update` button when the remote manifest version in [docs/release.json](./docs/release.json) is newer than their local [VERSION](./VERSION).

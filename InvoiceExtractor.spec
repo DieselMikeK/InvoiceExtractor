@@ -20,6 +20,7 @@ a = Analysis(
         ('header.png', '.'),
         ('logo.ico', '.'),
         ('VERSION', '.'),
+        ('vendors.csv', '.'),
         (updater_asset, 'update'),
     ],
     hiddenimports=[],

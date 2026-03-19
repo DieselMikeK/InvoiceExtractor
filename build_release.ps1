@@ -16,6 +16,7 @@ python -m PyInstaller --noconfirm InvoiceExtractor.spec
 $version = (Get-Content VERSION -Raw).Trim()
 $mainExe = Join-Path $repoRoot 'dist\InvoiceExtractor.exe'
 $updaterExe = Join-Path $repoRoot 'dist\InvoiceExtractorUpdater.exe'
+$releaseAssetsDir = Join-Path $repoRoot 'dist\release-assets'
 $releaseTemplatePath = Join-Path $repoRoot 'dist\release-template.json'
 $runtimeUpdateDir = Join-Path $repoRoot 'update'
 $runtimeUpdaterExe = Join-Path $runtimeUpdateDir 'InvoiceExtractorUpdater.exe'
@@ -28,14 +29,51 @@ if (-not (Test-Path $updaterExe)) {
 }
 
 $sha256 = (Get-FileHash -Algorithm SHA256 $mainExe).Hash.ToLowerInvariant()
+$releaseFiles = [System.Collections.ArrayList]::new()
+$null = $releaseFiles.Add([ordered]@{
+    relative_path = 'InvoiceExtractor.exe'
+    asset_name    = 'InvoiceExtractor.exe'
+    sha256        = $sha256
+})
+
+if (Test-Path $releaseAssetsDir) {
+    Remove-Item -Recurse -Force $releaseAssetsDir
+}
+New-Item -ItemType Directory -Force -Path $releaseAssetsDir | Out-Null
+
+# Curated payload files that should live beside the installed app.
+# User-specific folders such as required/, build/, and training/ are intentionally excluded.
+foreach ($payloadFile in @(
+    [ordered]@{
+        source_path   = Join-Path $repoRoot 'vendors.csv'
+        relative_path = 'app/vendors.csv'
+        asset_name    = 'app-vendors.csv'
+    }
+)) {
+    if (-not (Test-Path $payloadFile.source_path)) {
+        throw "Missing release payload file $($payloadFile.source_path)"
+    }
+
+    $assetTarget = Join-Path $releaseAssetsDir $payloadFile.asset_name
+    Copy-Item -Force $payloadFile.source_path $assetTarget
+
+    $payloadSha256 = (Get-FileHash -Algorithm SHA256 $assetTarget).Hash.ToLowerInvariant()
+    $null = $releaseFiles.Add([ordered]@{
+        relative_path = $payloadFile.relative_path
+        asset_name    = $payloadFile.asset_name
+        sha256        = $payloadSha256
+    })
+}
+
 $releaseTemplate = [ordered]@{
     version      = $version
     download_url = ''
     sha256       = $sha256
     notes        = ''
     published_at = ''
+    files        = $releaseFiles
 }
-$releaseTemplate | ConvertTo-Json | Set-Content -Path $releaseTemplatePath -Encoding UTF8
+$releaseTemplate | ConvertTo-Json -Depth 5 | Set-Content -Path $releaseTemplatePath -Encoding UTF8
 
 New-Item -ItemType Directory -Force -Path $runtimeUpdateDir | Out-Null
 foreach ($legacyPath in @(
@@ -61,5 +99,6 @@ Write-Host ''
 Write-Host "Build complete."
 Write-Host "Main app:      $mainExe"
 Write-Host "Updater helper:$runtimeUpdaterExe"
+Write-Host "Release assets:$releaseAssetsDir"
 Write-Host "Release JSON:  $releaseTemplatePath"
 Write-Host "SHA-256:       $sha256"

@@ -13,6 +13,7 @@ APP_NAME = "Invoice Extractor"
 MAIN_EXECUTABLE_NAME = "InvoiceExtractor.exe"
 UPDATER_EXECUTABLE_NAME = "InvoiceExtractorUpdater.exe"
 VERSION_FILENAME = "VERSION"
+PRIMARY_RELEASE_RELATIVE_PATH = MAIN_EXECUTABLE_NAME
 DEFAULT_UPDATE_MANIFEST_URL = (
     "https://raw.githubusercontent.com/DieselMikeK/InvoiceExtractor/main/docs/release.json"
 )
@@ -40,6 +41,50 @@ def get_resource_path(relative_path):
 def normalize_version(value):
     """Normalize a version string for comparisons and display."""
     return str(value or "").strip().lstrip("vV")
+
+
+def normalize_release_relative_path(value):
+    """Normalize a manifest file path and reject traversal outside the install root."""
+    raw_value = str(value or "").strip().replace("\\", "/")
+    parts = []
+    for token in raw_value.split("/"):
+        token = token.strip()
+        if not token or token == ".":
+            continue
+        if token == "..":
+            raise ValueError("Release manifest file path cannot contain '..'.")
+        parts.append(token)
+    if not parts:
+        raise ValueError("Release manifest file path is missing.")
+    return "/".join(parts)
+
+
+def normalize_sha256(value):
+    """Normalize and validate a SHA-256 string."""
+    sha256 = str(value or "").strip().lower()
+    if sha256:
+        sha256 = "".join(ch for ch in sha256 if ch in "0123456789abcdef")
+        if len(sha256) != 64:
+            raise ValueError("Release manifest sha256 must be a 64-character hex string.")
+    return sha256
+
+
+def normalize_release_file(entry):
+    """Normalize a single file entry from the release manifest."""
+    if not isinstance(entry, dict):
+        raise ValueError("Release manifest file entries must be JSON objects.")
+
+    relative_path = normalize_release_relative_path(
+        entry.get("relative_path") or entry.get("path")
+    )
+    download_url = str(entry.get("download_url") or "").strip()
+    sha256 = normalize_sha256(entry.get("sha256"))
+
+    return {
+        "relative_path": relative_path,
+        "download_url": download_url,
+        "sha256": sha256,
+    }
 
 
 def parse_version_tuple(value):
@@ -120,14 +165,48 @@ def normalize_release_manifest(data, source_url=""):
         raise ValueError("Release manifest is missing a version.")
 
     download_url = str(data.get("download_url") or "").strip()
-    sha256 = str(data.get("sha256") or "").strip().lower()
+    sha256 = normalize_sha256(data.get("sha256"))
     notes = str(data.get("notes") or data.get("body") or "").strip()
     published_at = str(data.get("published_at") or "").strip()
+    files = []
 
-    if sha256:
-        sha256 = "".join(ch for ch in sha256 if ch in "0123456789abcdef")
-        if len(sha256) != 64:
-            raise ValueError("Release manifest sha256 must be a 64-character hex string.")
+    raw_files = data.get("files")
+    if raw_files is not None:
+        if not isinstance(raw_files, list):
+            raise ValueError("Release manifest files must be a JSON array.")
+        seen_paths = set()
+        for entry in raw_files:
+            normalized_entry = normalize_release_file(entry)
+            key = normalized_entry["relative_path"].lower()
+            if key in seen_paths:
+                raise ValueError(
+                    f"Release manifest contains duplicate file entry '{normalized_entry['relative_path']}'."
+                )
+            seen_paths.add(key)
+            files.append(normalized_entry)
+
+    if not files and download_url:
+        files.append(
+            {
+                "relative_path": PRIMARY_RELEASE_RELATIVE_PATH,
+                "download_url": download_url,
+                "sha256": sha256,
+            }
+        )
+
+    primary_file = next(
+        (
+            entry
+            for entry in files
+            if entry["relative_path"].lower() == PRIMARY_RELEASE_RELATIVE_PATH.lower()
+        ),
+        None,
+    )
+    if primary_file:
+        if not download_url:
+            download_url = primary_file["download_url"]
+        if not sha256:
+            sha256 = primary_file["sha256"]
 
     return {
         "version": version,
@@ -135,6 +214,7 @@ def normalize_release_manifest(data, source_url=""):
         "sha256": sha256,
         "notes": notes,
         "published_at": published_at,
+        "files": files,
         "source_url": source_url,
     }
 
@@ -208,5 +288,20 @@ def stage_updater_executable(current_version):
 
     if needs_copy:
         shutil.copy2(source_path, staged_path)
+
+    return staged_path
+
+
+def stage_release_manifest(manifest, current_version=""):
+    """Write a normalized release manifest to a stable temp path for the updater helper."""
+    normalized_manifest = normalize_release_manifest(manifest)
+    staged_dir = os.path.join(tempfile.gettempdir(), "InvoiceExtractorUpdater")
+    os.makedirs(staged_dir, exist_ok=True)
+
+    version_tag = normalize_version(current_version or normalized_manifest.get("version")) or "dev"
+    staged_path = os.path.join(staged_dir, f"{version_tag}-release-manifest.json")
+
+    with open(staged_path, "w", encoding="utf-8") as f:
+        json.dump(normalized_manifest, f, indent=2)
 
     return staged_path
