@@ -339,7 +339,16 @@ class InvoiceExtractorGUI:
         self.app_version = load_app_version()
         self.available_update = None
         self.update_button = None
+        self.update_button_glow = None
         self._update_button_visible = False
+        self._update_flash_job = None
+        self._update_flash_on = False
+        self._update_button_bg = '#157347'
+        self._update_button_active_bg = '#198754'
+        self._update_button_disabled_bg = '#4f6f5a'
+        self._update_button_glow_dim = '#2d7a42'
+        self._update_button_glow_bright = '#5dff8a'
+        self._update_button_neutral_bg = ttk.Style().lookup('TFrame', 'background') or self.root.cget('bg')
         self.version_var = tk.StringVar(value=f"v{self.app_version}")
 
         self.build_ui()
@@ -396,28 +405,81 @@ class InvoiceExtractorGUI:
     def _set_available_update(self, manifest):
         """Show or hide the update button based on the available release manifest."""
         self.available_update = manifest
-        if self.update_button is None:
+        if self.update_button is None or self.update_button_glow is None:
             return
 
         if manifest:
             self.update_button.configure(text=f"Update to v{manifest['version']}")
             if not self._update_button_visible:
-                self.update_button.pack(side=tk.RIGHT, padx=(0, 8))
+                self.update_button_glow.pack(side=tk.RIGHT, padx=(0, 8))
                 self._update_button_visible = True
         elif self._update_button_visible:
-            self.update_button.pack_forget()
+            self._stop_update_button_flash()
+            self.update_button_glow.pack_forget()
             self._update_button_visible = False
 
         self._refresh_update_button_state()
 
+    def _stop_update_button_flash(self, glow_color=None):
+        """Stop the update pulse and leave the glow in a stable state."""
+        if self._update_flash_job is not None:
+            self.root.after_cancel(self._update_flash_job)
+            self._update_flash_job = None
+        self._update_flash_on = False
+        if self.update_button_glow is not None:
+            self.update_button_glow.configure(bg=glow_color or self._update_button_neutral_bg)
+
+    def _pulse_update_button(self):
+        """Pulse the update glow while a clickable update is available."""
+        if (
+            self.update_button is None
+            or self.update_button_glow is None
+            or not self.available_update
+            or not self._update_button_visible
+            or str(self.update_button.cget('state')) != tk.NORMAL
+        ):
+            self._stop_update_button_flash()
+            return
+
+        self._update_flash_on = not self._update_flash_on
+        glow_color = (
+            self._update_button_glow_bright
+            if self._update_flash_on
+            else self._update_button_glow_dim
+        )
+        self.update_button_glow.configure(bg=glow_color)
+        self._update_flash_job = self.root.after(550, self._pulse_update_button)
+
+    def _start_update_button_flash(self):
+        """Start pulsing the update button if it is not already animating."""
+        if self._update_flash_job is not None:
+            return
+        self._pulse_update_button()
+
     def _refresh_update_button_state(self):
         """Enable the update button only when an update is available and the app is idle."""
-        if self.update_button is None:
+        if self.update_button is None or self.update_button_glow is None:
             return
         if not self.available_update or not self._update_button_visible:
+            self._stop_update_button_flash()
             return
-        state = tk.DISABLED if self.is_running else tk.NORMAL
+        is_enabled = not self.is_running
+        state = tk.NORMAL if is_enabled else tk.DISABLED
         self.update_button.configure(state=state)
+        if is_enabled:
+            self.update_button.configure(
+                bg=self._update_button_bg,
+                activebackground=self._update_button_active_bg,
+                cursor='hand2',
+            )
+            self._start_update_button_flash()
+        else:
+            self.update_button.configure(
+                bg=self._update_button_disabled_bg,
+                activebackground=self._update_button_disabled_bg,
+                cursor='arrow',
+            )
+            self._stop_update_button_flash(glow_color=self._update_button_glow_dim)
 
     def _on_update_clicked(self):
         """Confirm and launch the external updater helper."""
@@ -1130,11 +1192,31 @@ class InvoiceExtractorGUI:
         )
         version_label.pack(side=tk.RIGHT)
 
-        self.update_button = ttk.Button(
+        self.update_button_glow = tk.Frame(
             top_bar,
-            text="Update Available",
-            command=self._on_update_clicked
+            bg=self._update_button_neutral_bg,
+            bd=0,
+            highlightthickness=0,
         )
+
+        self.update_button = tk.Button(
+            self.update_button_glow,
+            text="Update Available",
+            command=self._on_update_clicked,
+            font=('Segoe UI', 9, 'bold'),
+            bg=self._update_button_bg,
+            activebackground=self._update_button_active_bg,
+            fg='white',
+            activeforeground='white',
+            disabledforeground='#e2efe6',
+            relief=tk.FLAT,
+            bd=0,
+            padx=14,
+            pady=6,
+            highlightthickness=0,
+            cursor='hand2',
+        )
+        self.update_button.pack(padx=2, pady=2)
 
         # Header image (centered)
         self.header_path = get_resource_path('header.png')
