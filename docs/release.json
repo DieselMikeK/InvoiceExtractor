@@ -1,7 +1,7 @@
 {
-  "version": "1.2.1",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.1/InvoiceExtractor.exe",
-  "sha256": "adc0e84a4da4e99cf9f79130e02b5b8060491ea06b6c28e9b804b4b8615852ac",
-  "notes": "Test updater release",
-  "published_at": "03/19/2026 22:05:18"
+  "version": "1.2.2",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.2/InvoiceExtractor.exe",
+  "sha256": "c5f86ab8dcaaf4bb8b53b701759c40b752cfb09159dfbce069522c75eabc98b3",
+  "notes": "Pulse the update button so new releases are harder to miss",
+  "published_at": "03/19/2026 22:15:49"
 }
