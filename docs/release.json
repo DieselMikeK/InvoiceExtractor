@@ -1,19 +1,19 @@
 {
-  "version": "1.2.3",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.3/InvoiceExtractor.exe",
-  "sha256": "54a9766fe75483f540f54dfd89585d4b8344b178219c6fe1d326e9388794d372",
-  "notes": "Ship the pulsing update button and add curated multi-file app updates, including app\\\\vendors.csv",
-  "published_at": "03/19/2026 22:32:22",
+  "version": "1.2.4",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.4/InvoiceExtractor.exe",
+  "sha256": "67ece591134e9fb55fcbb54ce6f77089d04e08a25deb45229a0b4693c93fce93",
+  "notes": "Train HO/MI/PT/FU/DE and PP/MA/DD/KT/ST/SM with vendor-specific parsing, sender fallback, bundled vendor updates, and QB export fixes.",
+  "published_at": "03/23/2026 23:05:05",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.3/InvoiceExtractor.exe",
-      "sha256": "54a9766fe75483f540f54dfd89585d4b8344b178219c6fe1d326e9388794d372"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.4/InvoiceExtractor.exe",
+      "sha256": "67ece591134e9fb55fcbb54ce6f77089d04e08a25deb45229a0b4693c93fce93"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.3/app-vendors.csv",
-      "sha256": "c00e7b88f795a7ed5e09879052f3b113cc41a9785098b823431d9b65cbb4b9db"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.4/app-vendors.csv",
+      "sha256": "1388f881b90192225de923fdb97d35d525b9e453fc1ba42d85c7e2ca214be388"
     }
   ]
 }
