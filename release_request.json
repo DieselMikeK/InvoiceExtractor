@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Ship the pulsing update button and add curated multi-file app updates, including app\\\\vendors.csv",
-    "requested_at":  "2026-03-19T22:30:17.5271127Z"
+    "notes":  "Train HO/MI/PT/FU/DE and PP/MA/DD/KT/ST/SM with vendor-specific parsing, sender fallback, bundled vendor updates, and QB export fixes.",
+    "requested_at":  "2026-03-23T23:02:42.2302016Z"
 }
