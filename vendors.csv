@@ -1,4 +1,4 @@
-vendor,aliases,mailing_address,default_terms,due_date_days
+vendor,aliases,mailing_address,default_terms,due_date_days,sender_aliases
 Accuform Plastics - $5 DS Fee,
 Aero Exhaust,
 AFE Power,
@@ -26,23 +26,23 @@ Custom Battery Cables,
 Customs Unlimited,
 Dave Smith,
 Daystar,
-Diamond Eye Manufacturing - $3.00 DS Fee,
+Diamond Eye Manufacturing,"Diamond Eye Manufacturing - $3.00 DS Fee|107 W. Main St. - Athena, Oregon 97813","107 W. Main St. - Athena, Oregon 97813","$3.00 DS FEE -  Net 30",30
 Diesel Forward,
 DieselSite,
 Downeybrand,
 Dynatrac,
-Dynomite Diesel,
+Dynomite Diesel,,,"1% 10 Net 30",30
 Factor 55 - $10 DS Fee,
 FASS Fuel Systems,
 Fast Coolers,
 "Fleece Performance Engineering, Inc.",,,"Net 15th",
 Full Force Diesel,
 Full Send Diesel,
-Fumoto Engineering of America,
+Fumoto Engineering of America,"FUMOTO ENGINEERING OF AMERICA, INC.",,"Net 30",30
 Glacier Diesel Power,
 Hamilton Cams - $20 Dropship Fee,
 Holders Diesel,
-Holley Performance Brands,
+Holley Performance Brands,"Holley Performance Products Inc.","P.O. Box 31001- 2299 Pasadena, CA 91110-2299","1% 10 Net 30",30
 Hot Shot's Secret,
 HPS Performance Products,
 H&S Motorsports,
@@ -51,6 +51,7 @@ Industrial Injection,,"2858 South 300 West, Salt Lake City, UT 84115-3403","Net 
 Irate Diesel Performance,
 ISSPRO - $4.15 DS Fee,
 KC HiLites,
+KC Turbos,,"12255 S. Pasadena , Mesa, AZ 85210","Net 30",30,invoicing@kcturbos.com
 Kelderman Manufacturing,
 Kenworth Sales of Spokane,
 Keystone Automotive,
@@ -62,19 +63,19 @@ Manton Pushrods,
 Maxtrac Suspension,
 MBRP,
 Mean Green,
-Merchant Automotive,
+Merchant Automotive,,"200 N Fairview Rd , Suite 30, Zeeland MI 49464, United States",Credit Card,0
 Mevotech,
 Meyer Distributing,
 Mike White Ford,
-Mishimoto Automotive,
+Mishimoto Automotive,"Resource Intl Inc.|Resource Intl. Inc.|Resource Intl. Inc. - US","1515 Garnet Mine Rd., Garnet Valley, PA 19060","Net 15",15
 NAPA Auto Parts,
 N-Fab,
 No Limit Fabrication,No Limit Enterprises,"5317 Bonsai Avenue Moorpark, CA 93021","Credit Card",0
 PacBrake,
 Pacific Performance Engineering - $5 DS Fee,Pacific Performance Engineering|PPE
-Performance Turbochargers,
+Performance Turbochargers,"Diesel USA Group","1477 E Cedat Street, Ontario, CA 91761","Net 30",30
 PMF Suspension,
-Poly Performance,
+Poly Performance,,"860 Industrial Way , STE 100 , San Luis Obispo CA 93401","Net 30",30
 Power Distributing,
 Power Driven Diesel,
 Powermaster Performance,
@@ -94,7 +95,7 @@ Rotomaster,
 S&B Filters,S&B|15461 Slover Avenue
 Scotty's Tire and Automotive,
 SDHQ,
-Serra Chrysler Dodge Ram Jeep of Traverse City,
+Serra Chrysler Dodge Ram Jeep of Traverse City,,,Credit Card,0,@serratc.com
 Sinister Diesel,
 Smeding Diesel,
 South Bend,
@@ -106,7 +107,7 @@ Strictly Diesel,
 Sulastic Rubber Springs,
 Suncoast,
 Superlift,
-SuspensionMAXX,
+SuspensionMAXX,,"1692 MARQUETTE ST , BAY CITY, MI 48706",Credit Card,0
 Switch-Pros,
 Synapse Auto,
 Synergy Manufacturing,

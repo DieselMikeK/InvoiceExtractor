@@ -5,6 +5,7 @@ import csv
 import base64
 import pickle
 import time
+from email.utils import parseaddr
 from datetime import datetime
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
@@ -50,6 +51,15 @@ def retry_with_backoff(func, max_retries=3, base_delay=2, status_callback=None):
                     f"Retrying in {delay}s...", "warning"
                 )
             time.sleep(delay)
+
+
+def _extract_sender_email(from_header):
+    """Normalize a Gmail From header down to the sender email address."""
+    raw = str(from_header or '').strip()
+    if not raw:
+        return ''
+    parsed = parseaddr(raw)[1].strip().lower()
+    return parsed
 
 
 class GmailClient:
@@ -314,7 +324,11 @@ class GmailClient:
         """Main method: fetch all emails, download new attachments.
 
         Returns:
-            tuple: (list of new filenames downloaded, total emails checked, total new emails)
+            tuple: (
+                list of downloaded attachment metadata dicts,
+                total emails checked,
+                total new emails,
+            )
         """
         self.status_callback("Fetching email list...")
         all_messages = self.fetch_all_message_ids(query=query)
@@ -334,7 +348,7 @@ class GmailClient:
 
         self.status_callback(f"Processing {new_count} new emails...")
 
-        downloaded_files = []
+        downloaded_attachments = []
 
         for i, msg_data in enumerate(new_messages, 1):
             msg_id = msg_data['id']
@@ -350,6 +364,8 @@ class GmailClient:
                     for h in payload.get('headers', [])
                 }
                 subject = headers.get('Subject', '(no subject)')
+                from_header = headers.get('From', '')
+                sender_email = _extract_sender_email(from_header)
 
                 # Find attachments
                 parts = payload.get('parts', [])
@@ -376,7 +392,13 @@ class GmailClient:
                         self.status_callback(
                             f"    Downloaded: {saved_name}", "success"
                         )
-                        downloaded_files.append(saved_name)
+                        downloaded_attachments.append({
+                            'filename': saved_name,
+                            'sender_email': sender_email,
+                            'sender_header': from_header,
+                            'subject': subject,
+                            'message_id': msg_id,
+                        })
 
                 # Mark email as processed via Gmail label
                 try:
@@ -397,10 +419,10 @@ class GmailClient:
                     pass  # Best effort
 
         self.status_callback(
-            f"Download complete: {len(downloaded_files)} attachments from "
+            f"Download complete: {len(downloaded_attachments)} attachments from "
             f"{new_count} new emails.", "success"
         )
-        return downloaded_files, total_emails, new_count
+        return downloaded_attachments, total_emails, new_count
 
 
 HISTORY_FILENAME = 'invoice_history.csv'

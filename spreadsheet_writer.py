@@ -109,7 +109,8 @@ def _format_export_date(value):
 
 
 def _normalize_export_terms(value):
-    text = re.sub(r'\s+', ' ', str(value or '').strip())
+    raw_text = str(value or '').strip()
+    text = re.sub(r'\s+', ' ', raw_text)
     if not text:
         return ''
 
@@ -134,7 +135,9 @@ def _normalize_export_terms(value):
     if collapsed == 'net10thprox':
         return 'Net 10th'
 
-    return text
+    if '\n' in raw_text or '\r' in raw_text or '\t' in raw_text:
+        return text
+    return raw_text
 
 
 def _header_for_key(key):

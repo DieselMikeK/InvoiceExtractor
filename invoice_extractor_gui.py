@@ -68,6 +68,15 @@ BATCH_FOLDER_PREFIX = "Batch_"
 BATCHES_ROOT_NAME = "Batches"
 AUTHORIZED_GMAIL_ACCOUNT = "dppautoap@gmail.com"
 SHOPIFY_CORE_RATE_TOLERANCE = 0.01
+SENDER_METADATA_FIELDNAMES = [
+    'source_file',
+    'filename',
+    'sender_email',
+    'sender_header',
+    'subject',
+    'message_id',
+    'downloaded_at',
+]
 
 def _normalize_vendor_key(name):
     if not name:
@@ -676,6 +685,45 @@ class InvoiceExtractorGUI:
 
     def _history_log_path(self):
         return os.path.join(self.required_dir, 'invoice_history.csv')
+
+    def _sender_metadata_path(self):
+        return os.path.join(self.required_dir, 'invoice_sender_metadata.csv')
+
+    def _load_sender_metadata(self):
+        """Load locally cached sender metadata keyed by source_file."""
+        path = self._sender_metadata_path()
+        if not os.path.exists(path):
+            return {}
+        entries = {}
+        try:
+            with open(path, newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    cleaned = {
+                        key: str((row or {}).get(key, '') or '').strip()
+                        for key in SENDER_METADATA_FIELDNAMES
+                    }
+                    source_file = cleaned.get('source_file', '')
+                    if source_file:
+                        entries[source_file] = cleaned
+        except Exception as e:
+            self.log(f"Warning: could not read sender metadata ({e})", "warning")
+        return entries
+
+    def _save_sender_metadata(self, entries):
+        """Persist sender metadata locally for future re-parses."""
+        path = self._sender_metadata_path()
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=SENDER_METADATA_FIELDNAMES)
+                writer.writeheader()
+                for entry in entries:
+                    writer.writerow({
+                        key: str((entry or {}).get(key, '') or '').strip()
+                        for key in SENDER_METADATA_FIELDNAMES
+                    })
+        except Exception as e:
+            self.log(f"Warning: could not save sender metadata ({e})", "warning")
 
     def _load_invoice_history(self, drive_client=None):
         """Load invoice history from Drive (preferred) or local fallback."""
@@ -1667,7 +1715,7 @@ class InvoiceExtractorGUI:
             elif mode == "range":
                 self.log("Downloading emails in date range (label filter ignored).", "warning")
 
-            downloaded_files, total_emails, new_emails = (
+            downloaded_attachments, total_emails, new_emails = (
                 client.fetch_and_download_new_attachments(query=query)
             )
 
@@ -1719,6 +1767,30 @@ class InvoiceExtractorGUI:
             def _source_file(filename):
                 return os.path.join(root_name, folder_name, filename).replace('\\', '/')
 
+            sender_metadata = self._load_sender_metadata()
+            sender_metadata_updated = False
+            timestamp_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            for attachment in downloaded_attachments:
+                filename = str((attachment or {}).get('filename', '')).strip()
+                if not filename:
+                    continue
+                source_file = _source_file(filename)
+                sender_metadata[source_file] = {
+                    'source_file': source_file,
+                    'filename': filename,
+                    'sender_email': str((attachment or {}).get('sender_email', '') or '').strip().lower(),
+                    'sender_header': str((attachment or {}).get('sender_header', '') or '').strip(),
+                    'subject': str((attachment or {}).get('subject', '') or '').strip(),
+                    'message_id': str((attachment or {}).get('message_id', '') or '').strip(),
+                    'downloaded_at': timestamp_now,
+                }
+                sender_metadata_updated = True
+            if sender_metadata_updated:
+                self._save_sender_metadata(sender_metadata.values())
+                self.log(
+                    f"Stored sender metadata for {len(downloaded_attachments)} attachment(s)."
+                )
+
             # Find all invoice files to parse
             all_invoice_files = []
             if os.path.exists(self.invoices_dir):
@@ -1750,22 +1822,19 @@ class InvoiceExtractorGUI:
                     self.log(f"Processing: {filename}")
 
                     try:
-                        invoice_data = parse_invoice(filepath, self.log)
+                        source_path = _source_file(filename)
+                        sender_entry = sender_metadata.get(source_path, {})
+                        invoice_data = parse_invoice(
+                            filepath,
+                            self.log,
+                            sender_email=sender_entry.get('sender_email', ''),
+                            sender_header=sender_entry.get('sender_header', ''),
+                        )
 
                         if invoice_data and invoice_data.get('not_an_invoice'):
-                            folder_name = os.path.basename(self.invoices_dir)
-                            root_name = os.path.basename(os.path.dirname(self.invoices_dir))
-                            source_path = os.path.join(
-                                root_name, folder_name, filename
-                            ).replace('\\', '/')
                             write_not_invoice_row(self.output_file, source_path, self.log)
                             success_count += 1
                         elif invoice_data:
-                            folder_name = os.path.basename(self.invoices_dir)
-                            root_name = os.path.basename(os.path.dirname(self.invoices_dir))
-                            source_path = os.path.join(
-                                root_name, folder_name, filename
-                            ).replace('\\', '/')
                             invoice_data['source_path'] = source_path
                             write_invoice_to_spreadsheet(
                                 self.output_file, invoice_data, self.log
@@ -1818,7 +1887,7 @@ class InvoiceExtractorGUI:
                 self.log("")
                 self.log("=== Summary ===", "info")
                 self.log(f"Emails checked: {total_emails} total, {new_emails} new")
-                self.log(f"Attachments downloaded: {len(downloaded_files)}")
+                self.log(f"Attachments downloaded: {len(downloaded_attachments)}")
                 self.log(f"Invoices parsed successfully: {success_count}", "success")
                 if error_count:
                     self.log(f"Invoices with errors: {error_count}", "error")
