@@ -503,6 +503,9 @@ def validate_vendor_name(text):
         return False
     if not re.search(r'[A-Za-z]', text):
         return False
+    collapsed = re.sub(r'\s+', '', str(text or '')).lower()
+    if collapsed in ('reprint', 'invoice', 'page'):
+        return False
     if re.search(r'_{3,}|Credit Card|Type:|Authorize|Please Enter', text, re.IGNORECASE):
         return False
     # Reject if it's a known customer name
@@ -512,6 +515,26 @@ def validate_vendor_name(text):
     if text.lower().strip() in NON_VENDOR_WORDS:
         return False
     return True
+
+
+def _is_reprint_vendor_name(name):
+    """Return True when a detected vendor is just a reprint stamp/header."""
+    collapsed = re.sub(r'\s+', '', str(name or '')).lower()
+    return collapsed == 'reprint'
+
+
+def _text_matches_pt_layout(text):
+    """Return True when text matches the PT/Diesel USA invoice structure."""
+    if not text:
+        return False
+    has_header = bool(re.search(
+        r'Part\s+Number\s+Order\s+Ship\s+B\/?O\s+Description\s+Unit\s+Net(?:\s+TE)?\s+Value',
+        text,
+        re.IGNORECASE,
+    ))
+    has_account_block = bool(re.search(r'\bBr\s+Accnt\b', text, re.IGNORECASE))
+    has_inv_ord = bool(re.search(r'Inv\s*#\s*\d{2}\s+\d{5,}\s+Ord#\s*\d+', text, re.IGNORECASE))
+    return has_header and has_account_block and has_inv_ord
 
 
 def extract_text_from_pdf(filepath):
@@ -1197,6 +1220,13 @@ def detect_vendor(text):
         vendor = payment_addr_match.group(1).strip().rstrip(',.')
         if validate_vendor_name(vendor):
             return vendor
+
+    # Strategy 3b: PT invoices can lose their readable vendor name on reprints,
+    # but the invoice structure is still distinctive.
+    if re.search(r'Diesel\s+USA\s+Group', text, re.IGNORECASE):
+        return 'Performance Turbochargers'
+    if _text_matches_pt_layout(text):
+        return 'Performance Turbochargers'
 
     # Strategy 4: Any vendor name found in vendors.csv (scan full text)
     vendor_from_list = _find_vendor_in_text(text)
@@ -4689,6 +4719,17 @@ def parse_invoice(filepath, status_callback=None, sender_email='', sender_header
     cb(f"  Parsing invoice data from {filename}...")
     data = parse_invoice_text(text, filepath)
     parsed_vendor = normalize_vendor_name(data.get('vendor', ''))
+    if (_is_reprint_vendor_name(parsed_vendor) or not parsed_vendor) and _text_matches_pt_layout(text):
+        cb("  PT layout detected despite missing readable vendor text; applying PT parser.")
+        data['vendor'] = 'Performance Turbochargers'
+        parsed_vendor = normalize_vendor_name(data.get('vendor', ''))
+        data['line_items'] = extract_line_items(text, filepath, vendor_name=data.get('vendor'))
+        if data.get('line_items'):
+            freight_items = [i for i in data['line_items'] if i.get('is_freight')]
+            if freight_items and not data.get('shipping_description'):
+                desc = freight_items[0].get('description') or freight_items[0].get('item_number') or 'Freight'
+                data['shipping_description'] = desc
+        data = _apply_vendor_specific_overrides(data, text, filepath)
 
     # Step 4: Pre-validate — if no bill number, no PO number, and no line items,
     # this is not an invoice (e.g. return forms, flyers, packing slips).
