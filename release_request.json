@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Add TLS certificate fallback for update checks and updater downloads so affected machines can update from GitHub when default Windows/Python trust fails.",
-    "requested_at":  "2026-03-24T16:37:52.6620476Z"
+    "notes":  "Publish a follow-up build above the local 1.2.5 handoff so updater validation can be tested on affected machines; includes the TLS certificate fallback for updater downloads.",
+    "requested_at":  "2026-03-24T16:40:26.5692678Z"
 }
