@@ -1,18 +1,18 @@
 {
-  "version": "1.2.5",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.5/InvoiceExtractor.exe",
-  "sha256": "c3fd477658c31bea47114ea8adc7132afbafe52c994f00a2b1625f4bed373b1f",
-  "notes": "Add TLS certificate fallback for update checks and updater downloads so affected machines can update from GitHub when default Windows/Python trust fails.",
-  "published_at": "03/24/2026 16:39:29",
+  "version": "1.2.6",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.6/InvoiceExtractor.exe",
+  "sha256": "f80b1c447d91ece65759a7c98edd85bb8a13e96d1f16ea9c8902d74f5cbe3c3f",
+  "notes": "Publish a follow-up build above the local 1.2.5 handoff so updater validation can be tested on affected machines; includes the TLS certificate fallback for updater downloads.",
+  "published_at": "03/24/2026 16:42:57",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.5/InvoiceExtractor.exe",
-      "sha256": "c3fd477658c31bea47114ea8adc7132afbafe52c994f00a2b1625f4bed373b1f"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.6/InvoiceExtractor.exe",
+      "sha256": "f80b1c447d91ece65759a7c98edd85bb8a13e96d1f16ea9c8902d74f5cbe3c3f"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.5/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.6/app-vendors.csv",
       "sha256": "1388f881b90192225de923fdb97d35d525b9e453fc1ba42d85c7e2ca214be388"
     }
   ]
