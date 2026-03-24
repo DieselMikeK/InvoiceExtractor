@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Publish a follow-up build above the local 1.2.5 handoff so updater validation can be tested on affected machines; includes the TLS certificate fallback for updater downloads.",
-    "requested_at":  "2026-03-24T16:40:26.5692678Z"
+    "notes":  "Fix Performance Turbochargers reprint invoices that were being detected as vendor R E P R I N T, restoring PT vendor-specific field extraction on those invoices.",
+    "requested_at":  "2026-03-24T17:14:23.3053127Z"
 }
