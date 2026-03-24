@@ -4,9 +4,16 @@ import hashlib
 import json
 import os
 import shutil
+import ssl
 import sys
 import tempfile
+import urllib.error
 import urllib.request
+
+try:
+    import certifi
+except Exception:  # pragma: no cover - optional fallback
+    certifi = None
 
 
 APP_NAME = "Invoice Extractor"
@@ -17,6 +24,7 @@ PRIMARY_RELEASE_RELATIVE_PATH = MAIN_EXECUTABLE_NAME
 DEFAULT_UPDATE_MANIFEST_URL = (
     "https://raw.githubusercontent.com/DieselMikeK/InvoiceExtractor/main/docs/release.json"
 )
+CERTIFI_CA_BUNDLE = certifi.where() if certifi else ""
 
 
 def get_source_dir():
@@ -155,6 +163,35 @@ def get_update_manifest_url(required_dir=None):
     return DEFAULT_UPDATE_MANIFEST_URL
 
 
+def _is_cert_verification_error(exc):
+    """Return True when an exception indicates TLS certificate verification failed."""
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return True
+    if isinstance(exc, ssl.SSLError) and "CERTIFICATE_VERIFY_FAILED" in str(exc):
+        return True
+    if isinstance(exc, urllib.error.URLError):
+        reason = getattr(exc, "reason", None)
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            return True
+        if isinstance(reason, ssl.SSLError) and "CERTIFICATE_VERIFY_FAILED" in str(reason):
+            return True
+        if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+            return True
+    return "CERTIFICATE_VERIFY_FAILED" in str(exc)
+
+
+def open_url_with_tls_fallback(request, timeout=5):
+    """Open a URL, retrying with certifi's CA bundle when default TLS trust fails."""
+    try:
+        return urllib.request.urlopen(request, timeout=timeout)
+    except Exception as exc:
+        if not CERTIFI_CA_BUNDLE or not _is_cert_verification_error(exc):
+            raise
+
+    ssl_context = ssl.create_default_context(cafile=CERTIFI_CA_BUNDLE)
+    return urllib.request.urlopen(request, timeout=timeout, context=ssl_context)
+
+
 def normalize_release_manifest(data, source_url=""):
     """Normalize a release manifest payload into the fields the app expects."""
     if not isinstance(data, dict):
@@ -226,7 +263,7 @@ def fetch_release_manifest(required_dir=None, timeout=5):
         url,
         headers={"User-Agent": f"{APP_NAME.replace(' ', '')}/UpdateCheck"},
     )
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    with open_url_with_tls_fallback(req, timeout=timeout) as response:
         charset = response.headers.get_content_charset() or "utf-8"
         payload = response.read().decode(charset)
     data = json.loads(payload)

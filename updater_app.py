@@ -17,6 +17,7 @@ from update_utils import (
     compute_file_sha256,
     get_resource_path,
     normalize_release_manifest,
+    open_url_with_tls_fallback,
 )
 
 try:
@@ -249,7 +250,7 @@ class UpdaterWindow:
             headers={"User-Agent": "InvoiceExtractorUpdater/1.0"},
         )
         os.makedirs(os.path.dirname(entry["staged_path"]), exist_ok=True)
-        with urllib.request.urlopen(req, timeout=60) as response:
+        with open_url_with_tls_fallback(req, timeout=60) as response:
             total_bytes = int(response.headers.get("Content-Length") or 0)
             downloaded_bytes = 0
             with open(entry["staged_path"], "wb") as f:
