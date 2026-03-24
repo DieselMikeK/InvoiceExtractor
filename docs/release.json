@@ -1,18 +1,18 @@
 {
-  "version": "1.2.6",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.6/InvoiceExtractor.exe",
-  "sha256": "f80b1c447d91ece65759a7c98edd85bb8a13e96d1f16ea9c8902d74f5cbe3c3f",
-  "notes": "Publish a follow-up build above the local 1.2.5 handoff so updater validation can be tested on affected machines; includes the TLS certificate fallback for updater downloads.",
-  "published_at": "03/24/2026 16:42:57",
+  "version": "1.2.7",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.7/InvoiceExtractor.exe",
+  "sha256": "434ef78bc2c423ff3cb0e7ab69f6211be18d9ad624d2ff73282c364be9e9b130",
+  "notes": "Fix Performance Turbochargers reprint invoices that were being detected as vendor R E P R I N T, restoring PT vendor-specific field extraction on those invoices.",
+  "published_at": "03/24/2026 17:17:02",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.6/InvoiceExtractor.exe",
-      "sha256": "f80b1c447d91ece65759a7c98edd85bb8a13e96d1f16ea9c8902d74f5cbe3c3f"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.7/InvoiceExtractor.exe",
+      "sha256": "434ef78bc2c423ff3cb0e7ab69f6211be18d9ad624d2ff73282c364be9e9b130"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.6/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.7/app-vendors.csv",
       "sha256": "1388f881b90192225de923fdb97d35d525b9e453fc1ba42d85c7e2ca214be388"
     }
   ]
