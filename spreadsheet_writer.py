@@ -674,6 +674,9 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     shipping_rate = shipping_cost if shipping_val > 0 else '0'
     shipping_desc = invoice_data.get('shipping_description', 'Shipping')
     shipping_label = _normalize_shipping_label(shipping_desc)
+    shipping_qty = ''
+    if shipping_label == 'Drop Ship':
+        shipping_qty = _normalize_qty_value(invoice_data.get('shipping_quantity', ''))
     shipping_category = PURCHASES_CATEGORY if shipping_label == 'Drop Ship' else FREIGHT_CATEGORY
     shipping_type = TYPE_CATEGORY
     shipping_product_service = (
@@ -694,7 +697,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'category': shipping_category,
             'product_service': shipping_product_service,
             'sku': '',
-            'qty': '',
+            'qty': shipping_qty,
             'rate': shipping_rate,
             'description': shipping_desc,
             'amount': '',

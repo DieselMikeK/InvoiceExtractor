@@ -815,6 +815,22 @@ def _extract_total_amount(text):
     return pick_best(weak_candidates)
 
 
+def _extract_ppe_drop_ship_quantity(text):
+    """Extract PPE drop-ship quantity from the Order Qty column."""
+    if not text:
+        return ''
+
+    patterns = [
+        r'(?im)^Drop\s+Ship\s+(\d+\.?\d*)\s+\d+\.?\d*\s+[\d,]+\.?\d{2}(?:\s+[\d,]+\.?\d{2})?\s*$',
+        r'(?im)^Drop\s+Ship\s+(\d+\.?\d*)\s+[\d,]+\.?\d{2}\s*$',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if match:
+            return _normalize_qty(match.group(1))
+    return ''
+
+
 def _extract_ppe_total_usd(text):
     """Extract PPE invoice total from footer totals, preferring explicit 'Total USD'."""
     if not text:
@@ -3602,7 +3618,8 @@ def _extract_ppe_items(items_section):
         match = item_line_re.match(line)
         if match:
             sku = match.group(1)
-            qty = match.group(4)
+            # PPE invoices may leave "Invoiced Qt" blank; use "Order Qty" for export quantity.
+            qty = match.group(3)
             unit_price = match.group(5).replace(',', '')
             amount = match.group(6).replace(',', '')
             unit_raw = match.group(2)
@@ -3639,20 +3656,17 @@ def _extract_ppe_items(items_section):
 
         drop_match = drop_ship_re.match(line)
         if drop_match:
-            qty = drop_match.group(2)
-            unit_price = drop_match.group(3).replace(',', '')
-            amount = drop_match.group(4).replace(',', '')
             desc = ''
             if i + 1 < len(lines) and re.match(r'^Drop\s+Ship\s+Fee', lines[i + 1], re.IGNORECASE):
                 desc = lines[i + 1].strip()
                 i += 1
             item = {
                 'item_number': 'Drop Ship',
-                'quantity': qty,
+                'quantity': drop_match.group(1),
                 'units': 'Each',
                 'description': desc or 'Drop Ship',
-                'unit_price': unit_price,
-                'amount': amount,
+                'unit_price': drop_match.group(3).replace(',', ''),
+                'amount': drop_match.group(4).replace(',', ''),
             }
             mark_freight_item(item)
             items.append(item)
@@ -4315,6 +4329,10 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
             data['customer'] = customer
 
     elif _is_holley_vendor_name(vendor_name):
+        holley_address = get_vendor_default_address(vendor_name)
+        if holley_address:
+            data['vendor_address'] = holley_address
+
         customer = _extract_holley_customer_from_layout(filepath)
         if customer:
             data['customer'] = customer
@@ -4616,11 +4634,15 @@ def parse_invoice_text(text, filepath=None):
     #           "Freight $0.00", "FREIGHT OUT $67.00", "FreightEB"
     _shipping_patterns = [
         (r'Shipping\s+Cost\s*\([^)]+\)\s*\$?([\d,]+\.?\d*)', 'Shipping'),   # S&B
-        (r'(?im)^Drop\s+Ship\s+\d+\.?\d*\s+\d+\.?\d*\s+[\d,]+\.?\d{2}\s+([\d,]+\.?\d{2})\s*$', 'Drop Ship'),  # PPE
         (r'Drop\s+Ship\s+\$?([\d,]+\.?\d*)', 'Drop Ship'),                    # FL, PPE
         (r'FREIGHT\s+OUT\s+\$?([\d,]+\.?\d*)', 'Freight'),                    # II
         (r'Freight\s+\$?([\d,]+\.?\d*)', 'Freight'),                          # T14, general
     ]
+    if _is_ppe_vendor_name(data.get('vendor', '')):
+        _shipping_patterns[1:1] = [
+            (r'(?im)^Drop\s+Ship\s+\d+\.?\d*\s+\d+\.?\d*\s+([\d,]+\.?\d{2})(?:\s+[\d,]+\.?\d{2})?\s*$', 'Drop Ship'),  # PPE full row
+            (r'(?im)^Drop\s+Ship\s+\d+\.?\d*\s+([\d,]+\.?\d{2})\s*$', 'Drop Ship'),  # PPE abbreviated row
+        ]
     for _pat, _desc in _shipping_patterns:
         _m = re.search(_pat, text, re.IGNORECASE | re.MULTILINE)
         if _m:
@@ -4630,6 +4652,8 @@ def parse_invoice_text(text, filepath=None):
             break
     if not data.get('shipping_cost'):
         data['shipping_cost'] = ''
+    if _is_ppe_vendor_name(data.get('vendor', '')):
+        data['shipping_quantity'] = _extract_ppe_drop_ship_quantity(text)
 
     # --- Total ---
     if _is_ppe_vendor_name(data.get('vendor', '')):
