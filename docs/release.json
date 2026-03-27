@@ -1,19 +1,19 @@
 {
-  "version": "1.2.7",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.7/InvoiceExtractor.exe",
-  "sha256": "434ef78bc2c423ff3cb0e7ab69f6211be18d9ad624d2ff73282c364be9e9b130",
-  "notes": "Fix Performance Turbochargers reprint invoices that were being detected as vendor R E P R I N T, restoring PT vendor-specific field extraction on those invoices.",
-  "published_at": "03/24/2026 17:17:02",
+  "version": "1.2.8",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.8/InvoiceExtractor.exe",
+  "sha256": "0e8d107c8720517863710ba6007fe5c99292f9685205f7c99b9608397c82285b",
+  "notes": "Fix PPE order qty and drop ship rate parsing; bake Holley remit-to address",
+  "published_at": "03/27/2026 19:54:34",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.7/InvoiceExtractor.exe",
-      "sha256": "434ef78bc2c423ff3cb0e7ab69f6211be18d9ad624d2ff73282c364be9e9b130"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.8/InvoiceExtractor.exe",
+      "sha256": "0e8d107c8720517863710ba6007fe5c99292f9685205f7c99b9608397c82285b"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.7/app-vendors.csv",
-      "sha256": "1388f881b90192225de923fdb97d35d525b9e453fc1ba42d85c7e2ca214be388"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.8/app-vendors.csv",
+      "sha256": "c2a5095ac72378da6e161383e6d49ccaab9b5f68d99c58c7d32c209a118de8fc"
     }
   ]
 }
