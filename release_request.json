@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix Performance Turbochargers reprint invoices that were being detected as vendor R E P R I N T, restoring PT vendor-specific field extraction on those invoices.",
-    "requested_at":  "2026-03-24T17:14:23.3053127Z"
+    "notes":  "Fix PPE order qty and drop ship rate parsing; bake Holley remit-to address",
+    "requested_at":  "2026-03-27T19:52:57.1184127Z"
 }
