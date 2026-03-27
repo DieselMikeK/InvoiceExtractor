@@ -1960,6 +1960,21 @@ def _is_holley_vendor_name(name):
     return bool(canonical_key and 'holleyperformancebrands' in canonical_key)
 
 
+def _is_valair_vendor_name(name):
+    """Return True if vendor name looks like Valair Clutch / ValAir, Inc."""
+    key = _normalize_vendor_key(name or '')
+    if key and key in {
+        _normalize_vendor_key('Valair Clutch'),
+        _normalize_vendor_key('ValAir, Inc.'),
+        _normalize_vendor_key('ValAir Inc'),
+        _normalize_vendor_key('ValAir'),
+    }:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    return bool(canonical_key and canonical_key == _normalize_vendor_key('Valair Clutch'))
+
+
 def _is_mishimoto_vendor_name(name):
     """Return True if vendor name looks like Mishimoto Automotive."""
     key = _normalize_vendor_key(name or '')
@@ -3223,6 +3238,85 @@ def _extract_holley_items_from_layout(filepath):
     return items
 
 
+def _extract_valair_items_from_layout(filepath):
+    """Parse Valair item rows from layout text, skipping tracking pseudo-items."""
+    layout_text = extract_layout_text_from_pdf(filepath)
+    if not layout_text:
+        return []
+
+    lines = layout_text.splitlines()
+    header_idx = None
+    for idx, line in enumerate(lines):
+        if all(token in line for token in ('Qty', 'Item', 'Description', 'Rate', 'Amount')):
+            header_idx = idx
+            break
+    if header_idx is None:
+        return []
+
+    items = []
+    current_item = None
+    product_row_re = re.compile(
+        r'^\s*(\d+(?:\.\d+)?)\s+(\S+)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$'
+    )
+    tracking_row_re = re.compile(
+        r'^\s*(?:\d+(?:\.\d+)?)?\s*Tracking\s+#\s+([A-Z0-9]{10,})\s+[\d,]+\.\d{2}\s+[\d,]+\.\d{2}\s*$',
+        re.IGNORECASE,
+    )
+    freight_row_re = re.compile(
+        r'^\s*(Freight\s+Charges)\s+\1\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$',
+        re.IGNORECASE,
+    )
+
+    for raw_line in lines[header_idx + 1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if 'Thank you for your business.' in stripped or re.search(r'\bSubtotal\b', stripped, re.IGNORECASE):
+            break
+
+        tracking_match = tracking_row_re.match(raw_line)
+        if tracking_match:
+            current_item = None
+            continue
+
+        freight_match = freight_row_re.match(raw_line)
+        if freight_match:
+            current_item = None
+            rate = _clean_price(freight_match.group(2))
+            amount = _clean_price(freight_match.group(3))
+            if rate not in ('', '0', '0.00') or amount not in ('', '0', '0.00'):
+                item = {
+                    'item_number': 'Freight Charges',
+                    'quantity': '1',
+                    'units': 'Each',
+                    'description': 'Freight Charges',
+                    'unit_price': rate,
+                    'amount': amount or rate,
+                }
+                items.append(mark_freight_item(item))
+            continue
+
+        product_match = product_row_re.match(raw_line)
+        if product_match:
+            current_item = {
+                'item_number': product_match.group(2),
+                'quantity': product_match.group(1),
+                'units': 'Each',
+                'description': re.sub(r'\s+', ' ', product_match.group(3)).strip(' ,'),
+                'unit_price': _clean_price(product_match.group(4)),
+                'amount': _clean_price(product_match.group(5)),
+            }
+            items.append(current_item)
+            continue
+
+        if current_item:
+            current_item['description'] = (
+                f"{current_item.get('description', '')} {re.sub(r'\\s+', ' ', stripped)}"
+            ).strip(' ,')
+
+    return items
+
+
 def _extract_pt_items_from_words(filepath):
     """Parse Performance Turbochargers rows using first-page coordinates."""
     words, _page_width = _extract_first_page_words(filepath)
@@ -4022,6 +4116,11 @@ def extract_line_items(text, filepath=None, vendor_name=None):
         if holley_items:
             return holley_items
 
+    if _is_valair_vendor_name(vendor_name):
+        valair_items = _extract_valair_items_from_layout(filepath)
+        if valair_items:
+            return valair_items
+
     if _is_pt_vendor_name(vendor_name):
         pt_items = _extract_pt_items_from_words(filepath)
         if pt_items:
@@ -4342,6 +4441,23 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
             po_match = re.search(r'(?m)^\s*C?\d[\w-]*\s+(\d{4,})\s+\S+', layout)
             if po_match:
                 data['po_number'] = po_match.group(1)
+
+    elif _is_valair_vendor_name(vendor_name):
+        default_terms = get_vendor_default_terms(vendor_name)
+        current_terms = str(data.get('terms') or '').strip()
+        if default_terms and (not current_terms or not re.search(r'\d', current_terms)):
+            data['terms'] = default_terms
+        if not data.get('tracking_number'):
+            tracking_match = re.search(
+                r'(?im)^\s*(?:\d+(?:\.\d+)?)?\s*Tracking\s+#\s+([A-Z0-9]{10,})\b',
+                text,
+            )
+            if tracking_match:
+                data['tracking_number'] = tracking_match.group(1)
+        has_freight_item = any(item.get('is_freight') for item in (data.get('line_items') or []))
+        shipping_cost = str(data.get('shipping_cost') or '').strip()
+        if not has_freight_item and not shipping_cost:
+            data['suppress_zero_shipping_row'] = True
 
     elif _is_pt_vendor_name(vendor_name):
         layout = _get_layout_text()

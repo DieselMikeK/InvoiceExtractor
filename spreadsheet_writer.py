@@ -664,6 +664,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
 
     # Always write shipping row (even if $0), unless freight items already exist
     has_freight_item = any(item.get('is_freight') for item in line_items)
+    suppress_zero_shipping_row = bool(invoice_data.get('suppress_zero_shipping_row'))
 
     try:
         shipping_val = float(str(shipping_cost).replace(',', '').replace('$', ''))
@@ -683,7 +684,11 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         'Drop Ship' if shipping_label == 'Drop Ship' else shipping_label
     )
 
-    if (not has_freight_item) and (shipping_rate or shipping_desc):
+    should_write_shipping_row = (not has_freight_item) and (shipping_rate or shipping_desc)
+    if suppress_zero_shipping_row and shipping_val <= 0:
+        should_write_shipping_row = False
+
+    if should_write_shipping_row:
         row_data = {
             'bill_no': shared_invoice_fields['bill_no'],
             'vendor': shared_invoice_fields['vendor'],
