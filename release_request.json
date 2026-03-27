@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix PPE order qty and drop ship rate parsing; bake Holley remit-to address",
-    "requested_at":  "2026-03-27T19:52:57.1184127Z"
+    "notes":  "Normalize Valair vendor mapping and clean VA training output",
+    "requested_at":  "2026-03-27T21:08:58.4145292Z"
 }
