@@ -14,7 +14,7 @@ if not os.path.exists(updater_asset):
 
 a = Analysis(
     ['invoice_extractor_gui.py'],
-    pathex=[],
+    pathex=[os.path.abspath('.')],
     binaries=[],
     datas=[
         ('header.png', '.'),

@@ -1,9 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
 
 a = Analysis(
     ['updater_app.py'],
-    pathex=[],
+    pathex=[os.path.abspath('.')],
     binaries=[],
     datas=[('logo.ico', '.')],
     hiddenimports=[],

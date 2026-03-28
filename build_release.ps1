@@ -6,15 +6,27 @@ Set-Location $repoRoot
 
 Write-Host 'Running syntax checks...'
 python -m py_compile update_utils.py updater_app.py invoice_extractor_gui.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'Syntax checks failed.'
+}
 
 Write-Host 'Building updater helper...'
 python -m PyInstaller --noconfirm InvoiceExtractorUpdater.spec
+if ($LASTEXITCODE -ne 0) {
+    throw 'Updater build failed.'
+}
 
 Write-Host 'Building main application...'
 python -m PyInstaller --noconfirm InvoiceExtractor.spec
+if ($LASTEXITCODE -ne 0) {
+    throw 'Main application build failed.'
+}
 
 Write-Host 'Verifying packaged modules...'
 $archiveListing = python -m PyInstaller.utils.cliutils.archive_viewer -r dist\InvoiceExtractor.exe
+if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to inspect packaged modules.'
+}
 foreach ($requiredModule in @(
     'invoice_parser',
     'spreadsheet_writer',
