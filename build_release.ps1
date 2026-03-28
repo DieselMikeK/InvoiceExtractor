@@ -13,6 +13,22 @@ python -m PyInstaller --noconfirm InvoiceExtractorUpdater.spec
 Write-Host 'Building main application...'
 python -m PyInstaller --noconfirm InvoiceExtractor.spec
 
+Write-Host 'Verifying packaged modules...'
+$archiveListing = python -m PyInstaller.utils.cliutils.archive_viewer -r dist\InvoiceExtractor.exe
+foreach ($requiredModule in @(
+    'invoice_parser',
+    'spreadsheet_writer',
+    'gmail_client',
+    'skunexus_client',
+    'shopify_client',
+    'update_utils'
+)) {
+    $moduleMatch = $archiveListing | Select-String -SimpleMatch "'$requiredModule'"
+    if (-not $moduleMatch) {
+        throw "Built InvoiceExtractor.exe is missing required bundled module '$requiredModule'."
+    }
+}
+
 $version = (Get-Content VERSION -Raw).Trim()
 $mainExe = Join-Path $repoRoot 'dist\InvoiceExtractor.exe'
 $updaterExe = Join-Path $repoRoot 'dist\InvoiceExtractorUpdater.exe'

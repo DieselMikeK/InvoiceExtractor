@@ -289,9 +289,14 @@ def _find_vendor_by_address_alias(text):
     if not normalized_text:
         return ""
     for alias in VENDOR_ALIAS_LIST:
-        if not re.search(r'\d', alias or ''):
+        alias_text = str(alias or '').strip()
+        if not re.search(r'\d', alias_text):
             continue
-        alias_key = _normalize_vendor_key(alias)
+        if len(re.findall(r'[A-Za-z]', alias_text)) < 4:
+            continue
+        alias_key = _normalize_vendor_key(alias_text)
+        if len(alias_key) < 8:
+            continue
         if alias_key and alias_key in normalized_text:
             return alias
     return ""
@@ -450,6 +455,30 @@ def _derive_due_date_from_bill_date(bill_date, days_after_bill_date):
         return due_dt.strftime('%Y-%m-%d')
     year = due_dt.strftime('%y') if fmt == '%m/%d/%y' else due_dt.strftime('%Y')
     return f"{due_dt.month}/{due_dt.day}/{year}"
+
+
+def _normalize_date_value(value):
+    """Normalize vendor-specific date strings to M/D/YYYY when possible."""
+    text = re.sub(r'\s+', ' ', str(value or '')).strip()
+    if not text:
+        return ''
+    for fmt in (
+        '%m/%d/%Y',
+        '%m/%d/%y',
+        '%Y-%m-%d',
+        '%b %d, %Y',
+        '%B %d, %Y',
+        '%d-%b-%y',
+        '%d-%b-%Y',
+        '%d-%B-%y',
+        '%d-%B-%Y',
+    ):
+        try:
+            parsed = datetime.strptime(text, fmt)
+            return f"{parsed.month}/{parsed.day}/{parsed.year}"
+        except ValueError:
+            continue
+    return text
 
 
 def _find_vendor_in_text_list(text, vendor_list):
@@ -1975,6 +2004,56 @@ def _is_valair_vendor_name(name):
     return bool(canonical_key and canonical_key == _normalize_vendor_key('Valair Clutch'))
 
 
+def _is_ats_vendor_name(name):
+    """Return True if vendor name looks like ATS Diesel Performance."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'atsdieselperformance' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    return bool(canonical_key and canonical_key == _normalize_vendor_key('ATS Diesel Performance'))
+
+
+def _is_isspro_vendor_name(name):
+    """Return True if vendor name looks like Isspro."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'isspro' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    return bool(canonical_key and 'isspro' in canonical_key)
+
+
+def _is_river_city_vendor_name(name):
+    """Return True if vendor name looks like River City Turbo."""
+    key = _normalize_vendor_key(name or '')
+    if key and 'rivercityturbo' in key:
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    return bool(canonical_key and canonical_key == _normalize_vendor_key('River City Turbo'))
+
+
+def _is_rock_krawler_vendor_name(name):
+    """Return True if vendor name looks like Rock Krawler / Pure Performance Group."""
+    key = _normalize_vendor_key(name or '')
+    if key and ('rockkrawler' in key or 'pureperformance' in key):
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    return bool(canonical_key and canonical_key == _normalize_vendor_key('Rock Krawler'))
+
+
+def _is_sport_truck_vendor_name(name):
+    """Return True if vendor name looks like Sport Truck USA / ST USA Holding Corp."""
+    key = _normalize_vendor_key(name or '')
+    if key and ('sporttruckusa' in key or 'stusaholdingcorp' in key):
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    return bool(canonical_key and canonical_key == _normalize_vendor_key('Sport Truck USA - $5 DS Fee'))
+
+
 def _is_mishimoto_vendor_name(name):
     """Return True if vendor name looks like Mishimoto Automotive."""
     key = _normalize_vendor_key(name or '')
@@ -2491,6 +2570,24 @@ def _customer_name_from_ship_to_lines(lines):
     return ''
 
 
+def _clean_ship_to_contact_name(value):
+    """Strip trailing vendor metadata from a ship-to contact line."""
+    text = re.sub(r'\s+', ' ', str(value or '')).strip(' ,')
+    if not text:
+        return ''
+    text = re.sub(r'\s+DATE\s+\d{1,2}/\d{1,2}/\d{2,4}\b.*$', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(
+        r'\s+\d{4,}\s+\d{1,2}/\d{1,2}/\d{2,4}\s+SO[\w-]+\b.*$',
+        '',
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+    text = re.sub(r'\s*-\([A-Za-z]+\)', '', text).strip()
+    text = re.sub(r'\s+\d{3}[-.\s]\d{3}[-.\s]\d{4}\b.*$', '', text).strip()
+    text = re.sub(r'\s{2,}', ' ', text).strip(' ,')
+    return text
+
+
 def _ship_to_our_address_from_lines(lines):
     """Return True when ship-to lines clearly match our warehouse address."""
     block = '\n'.join(str(line or '').strip() for line in lines or [])
@@ -2692,6 +2789,210 @@ def _extract_sm_ship_to_lines(filepath):
         words,
         min_x=ship_x,
         max_x=page_width or 1000,
+        min_top=header_top,
+        max_top=stop_top,
+    )
+
+
+def _extract_ats_ship_to_lines(filepath):
+    """Extract the ATS Ship To column from the Bill To | Ship To | PO layout."""
+    words, page_width = _extract_first_page_words(filepath)
+    if not words:
+        return []
+
+    lines = _group_words_into_lines(words)
+    header_words = None
+    stop_top = None
+    for line_words in lines:
+        line_text = _words_to_line_text(line_words)
+        if (
+            'Bill To' in line_text
+            and 'Ship To' in line_text
+            and 'PO #' in line_text
+            and 'Due Date' in line_text
+        ):
+            header_words = line_words
+            continue
+        if header_words and 'Qty' in line_text and 'Part Number' in line_text:
+            stop_top = float(line_words[0].get('top', 0))
+            break
+
+    if not header_words:
+        return []
+
+    header_top = float(header_words[0].get('top', 0))
+    ship_x = min(
+        (float(word.get('x0', 0)) for word in header_words if str(word.get('text', '')).lower() == 'ship'),
+        default=0,
+    )
+    po_x = min(
+        (float(word.get('x0', 0)) for word in header_words if str(word.get('text', '')).lower() == 'po'),
+        default=page_width or 1000,
+    )
+    if stop_top is None:
+        stop_top = max(float(word.get('top', 0)) for word in words) + 1
+
+    return _extract_column_lines_from_words(
+        words,
+        min_x=ship_x,
+        max_x=po_x,
+        min_top=header_top,
+        max_top=stop_top,
+    )
+
+
+def _extract_isspro_ship_to_lines(filepath):
+    """Extract ISSPRO's right-hand ship-to address block from layout text."""
+    layout_text = extract_layout_text_from_pdf(filepath)
+    if not layout_text:
+        return []
+
+    lines = layout_text.splitlines()
+    start_idx = None
+    stop_idx = None
+    for idx, raw_line in enumerate(lines):
+        line = str(raw_line or '')
+        if start_idx is None and line.upper().count('DIESEL POWER PRODUCTS') >= 2:
+            start_idx = idx
+            continue
+        if start_idx is not None and 'TOTAL PRICE' in line:
+            stop_idx = idx
+            break
+
+    if start_idx is None:
+        return []
+    if stop_idx is None:
+        stop_idx = len(lines)
+
+    ship_to_lines = []
+    for raw_line in lines[start_idx:stop_idx]:
+        stripped = str(raw_line or '').rstrip()
+        if not stripped:
+            continue
+        parts = [part.strip() for part in re.split(r'\s{2,}', stripped.strip()) if part.strip()]
+        if len(parts) >= 2:
+            candidate = parts[-1]
+        else:
+            candidate = stripped.strip()
+        if candidate:
+            ship_to_lines.append(candidate)
+    return ship_to_lines
+
+
+def _extract_rock_krawler_ship_to_lines(filepath):
+    """Extract the Rock Krawler Ship To column from the two-column header."""
+    words, page_width = _extract_first_page_words(filepath)
+    if not words:
+        return []
+
+    lines = _group_words_into_lines(words)
+    header_words = None
+    stop_top = None
+    for line_words in lines:
+        line_text = _words_to_line_text(line_words)
+        if re.search(r'\bBILL\s+TO\s+SHIP\s+TO\s+INVOICE\b', line_text, re.IGNORECASE):
+            header_words = line_words
+            continue
+        if header_words and re.search(r'\bSHIP\s+DATE\b', line_text, re.IGNORECASE):
+            stop_top = float(line_words[0].get('top', 0))
+            break
+
+    if not header_words:
+        return []
+
+    header_top = float(header_words[0].get('top', 0))
+    ship_x = min(
+        (float(word.get('x0', 0)) for word in header_words if str(word.get('text', '')).lower() == 'ship'),
+        default=0,
+    )
+    invoice_x = min(
+        (float(word.get('x0', 0)) for word in header_words if str(word.get('text', '')).lower() == 'invoice'),
+        default=page_width or 1000,
+    )
+    if stop_top is None:
+        stop_top = max(float(word.get('top', 0)) for word in words) + 1
+
+    return _extract_column_lines_from_words(
+        words,
+        min_x=ship_x,
+        max_x=invoice_x,
+        min_top=header_top,
+        max_top=stop_top,
+    )
+
+
+def _extract_rock_krawler_po_number(filepath):
+    """Extract the Customer PO from Rock Krawler's shipping header block."""
+    words, page_width = _extract_first_page_words(filepath)
+    if not words:
+        return ''
+
+    lines = _group_words_into_lines(words)
+    header_words = None
+    stop_top = None
+    for line_words in lines:
+        line_text = _words_to_line_text(line_words)
+        if 'CUSTOMER PO' in line_text and 'SHIP DATE' in line_text:
+            header_words = line_words
+            continue
+        if header_words and 'ACTIVITY' in line_text:
+            stop_top = float(line_words[0].get('top', 0))
+            break
+
+    if not header_words:
+        return ''
+
+    header_top = float(header_words[0].get('top', 0))
+    customer_x = min(
+        (float(word.get('x0', 0)) for word in header_words if str(word.get('text', '')).lower() == 'customer'),
+        default=0,
+    )
+    if stop_top is None:
+        stop_top = max(float(word.get('top', 0)) for word in words) + 1
+
+    po_lines = _extract_column_lines_from_words(
+        words,
+        min_x=customer_x,
+        max_x=page_width or 1000,
+        min_top=header_top,
+        max_top=stop_top,
+    )
+    return str(po_lines[0]).strip() if po_lines else ''
+
+
+def _extract_sport_truck_ship_to_lines(filepath):
+    """Extract the Sport Truck Ship To column from the Bill To | Ship To layout."""
+    words, page_width = _extract_first_page_words(filepath)
+    if not words:
+        return []
+
+    lines = _group_words_into_lines(words)
+    header_words = None
+    stop_top = None
+    for line_words in lines:
+        line_text = _words_to_line_text(line_words)
+        if re.search(r'\bBill\s+To\s+Ship\s+To\b', line_text, re.IGNORECASE):
+            header_words = line_words
+            continue
+        if header_words and re.search(r'\bCustomerNumber\b|\bPO\s+Number\b', line_text, re.IGNORECASE):
+            stop_top = float(line_words[0].get('top', 0))
+            break
+
+    if not header_words:
+        return []
+
+    header_top = float(header_words[0].get('top', 0))
+    ship_x = min(
+        (float(word.get('x0', 0)) for word in header_words if str(word.get('text', '')).lower() == 'ship'),
+        default=0,
+    )
+    if stop_top is None:
+        stop_top = max(float(word.get('top', 0)) for word in words) + 1
+
+    return _extract_column_lines_from_words(
+        words,
+        min_x=ship_x,
+        max_x=(page_width or 1000) + 1,
         min_top=header_top,
         max_top=stop_top,
     )
@@ -3167,6 +3468,55 @@ def _extract_holley_customer_from_layout(filepath):
     return ''
 
 
+def _extract_river_city_items_from_layout(filepath):
+    """Parse River City Turbo item rows from layout text."""
+    layout_text = extract_layout_text_from_pdf(filepath)
+    if not layout_text:
+        return []
+
+    lines = layout_text.splitlines()
+    header_idx = None
+    for idx, line in enumerate(lines):
+        if all(token in line for token in ('QTY', 'PART#', 'DESCRIPTION', 'PRICE', 'EXT.')):
+            header_idx = idx
+            break
+    if header_idx is None:
+        return []
+
+    items = []
+    current_item = None
+    row_re = re.compile(
+        r'^\s*(-?\d+\.\d{2})([A-Z0-9-]+)\s+(.+?)\s+(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})\s*$'
+    )
+
+    for raw_line in lines[header_idx + 1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if re.search(r'^(?:SUBTOTAL|SALES\s+TAX|GARRETT|FREIGHT|RC\s+SERIES|TOTAL)\b', stripped, re.IGNORECASE):
+            break
+
+        row_match = row_re.match(raw_line)
+        if row_match:
+            current_item = {
+                'item_number': row_match.group(2),
+                'quantity': _normalize_qty(row_match.group(1)),
+                'units': 'Each',
+                'description': re.sub(r'\s+', ' ', row_match.group(3)).strip(' ,'),
+                'unit_price': _clean_price(row_match.group(4)),
+                'amount': _clean_price(row_match.group(5)),
+            }
+            items.append(current_item)
+            continue
+
+        if current_item:
+            current_item['description'] = (
+                f"{current_item.get('description', '')} {re.sub(r'\\s+', ' ', stripped)}"
+            ).strip(' ,')
+
+    return items
+
+
 def _extract_holley_items_from_layout(filepath):
     """Parse Holley item rows from layout text, including drop ship and freight rows."""
     layout_text = extract_layout_text_from_pdf(filepath)
@@ -3305,6 +3655,231 @@ def _extract_valair_items_from_layout(filepath):
                 'description': re.sub(r'\s+', ' ', product_match.group(3)).strip(' ,'),
                 'unit_price': _clean_price(product_match.group(4)),
                 'amount': _clean_price(product_match.group(5)),
+            }
+            items.append(current_item)
+            continue
+
+        if current_item:
+            current_item['description'] = (
+                f"{current_item.get('description', '')} {re.sub(r'\\s+', ' ', stripped)}"
+            ).strip(' ,')
+
+    return items
+
+
+def _extract_ats_items_from_layout(filepath):
+    """Parse ATS item rows from layout text."""
+    layout_text = extract_layout_text_from_pdf(filepath)
+    if not layout_text:
+        return []
+
+    lines = layout_text.splitlines()
+    header_idx = None
+    for idx, line in enumerate(lines):
+        if all(token in line for token in ('Qty', 'Part Number', 'Item Description', 'Unit Price', 'Amount')):
+            header_idx = idx
+            break
+    if header_idx is None:
+        return []
+
+    items = []
+    current_item = None
+    row_re = re.compile(
+        r'^\s*(\d+(?:\.\d+)?)\s+(\S+)\s+(.+?)\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s*$'
+    )
+
+    for raw_line in lines[header_idx + 1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('Return Policy') or re.search(r'\bSubtotal\b', stripped, re.IGNORECASE):
+            break
+
+        row_match = row_re.match(stripped)
+        if row_match:
+            current_item = {
+                'item_number': row_match.group(2),
+                'quantity': row_match.group(1),
+                'units': 'Each',
+                'description': re.sub(r'\s+', ' ', row_match.group(3)).strip(' ,'),
+                'unit_price': _clean_price(row_match.group(4)),
+                'amount': _clean_price(row_match.group(5)),
+            }
+            items.append(current_item)
+            continue
+
+        if current_item:
+            current_item['description'] = (
+                f"{current_item.get('description', '')} {re.sub(r'\\s+', ' ', stripped)}"
+            ).strip(' ,')
+
+    return items
+
+
+def _extract_isspro_items_from_layout(filepath):
+    """Parse Isspro product rows from layout text, including footer discount."""
+    layout_text = extract_layout_text_from_pdf(filepath)
+    if not layout_text:
+        return []
+
+    lines = layout_text.splitlines()
+    header_idx = None
+    for idx, line in enumerate(lines):
+        if 'TOTAL PRICE' in line:
+            header_idx = idx
+            break
+    if header_idx is None:
+        return []
+
+    items = []
+    current_item = None
+    row_re = re.compile(
+        r'^\s*\d{4}\s+(\S+)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2,5})\s+([\d,]+\.\d{2})\s*$'
+    )
+
+    for raw_line in lines[header_idx + 1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('REMITTANCE ADDRESS') or re.search(r'\bSUBTOTAL\b', stripped, re.IGNORECASE):
+            break
+
+        row_match = row_re.match(stripped)
+        if row_match:
+            ordered_qty = row_match.group(2)
+            shipped_qty = row_match.group(3)
+            current_item = {
+                'item_number': row_match.group(1),
+                'quantity': shipped_qty if shipped_qty not in ('', '0', '0.0') else ordered_qty,
+                'units': 'Each',
+                'description': '',
+                'unit_price': _clean_price(row_match.group(5)),
+                'amount': _clean_price(row_match.group(6)),
+            }
+            items.append(current_item)
+            continue
+
+        if current_item:
+            current_item['description'] = (
+                f"{current_item.get('description', '')} {re.sub(r'\\s+', ' ', stripped)}"
+            ).strip(' ,')
+
+    discount_match = re.search(r'LESS\s+DISCOUNT\s+([\d,]+\.\d{2})', layout_text, re.IGNORECASE)
+    if discount_match:
+        discount_amount = _clean_price(discount_match.group(1))
+        if discount_amount and discount_amount not in ('0', '0.00'):
+            amount_text = f"-{discount_amount}" if not discount_amount.startswith('-') else discount_amount
+            items.append({
+                'item_number': 'DPP DISCOUNT',
+                'quantity': '1',
+                'units': 'Each',
+                'description': 'LESS DISCOUNT',
+                'unit_price': amount_text,
+                'amount': amount_text,
+                'is_discount': True,
+            })
+
+    return items
+
+
+def _extract_rock_krawler_items_from_layout(filepath):
+    """Parse Rock Krawler activity rows from layout text."""
+    layout_text = extract_layout_text_from_pdf(filepath)
+    if not layout_text:
+        return []
+
+    lines = layout_text.splitlines()
+    header_idx = None
+    for idx, line in enumerate(lines):
+        if all(token in line for token in ('ACTIVITY', 'QTY', 'RATE', 'AMOUNT')):
+            header_idx = idx
+            break
+    if header_idx is None:
+        return []
+
+    items = []
+    current_item = None
+    row_re = re.compile(
+        r'^\s*([A-Z]{2,}[0-9A-Z-]+)\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{1,3})\s+([\d,]+\.\d{2})\s*$'
+    )
+
+    for raw_line in lines[header_idx + 1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if re.search(r'\bSUBTOTAL\b', stripped, re.IGNORECASE):
+            break
+
+        row_match = row_re.match(stripped)
+        if row_match:
+            current_item = {
+                'item_number': row_match.group(1),
+                'quantity': row_match.group(2),
+                'units': 'Each',
+                'description': '',
+                'unit_price': _clean_price(row_match.group(3)),
+                'amount': _clean_price(row_match.group(4)),
+            }
+            items.append(current_item)
+            continue
+
+        if current_item and not re.match(
+            r'^(?:Shipped On:|Total Shipment Weight:|Pack\b|Tracking\b|SHIPPING\b|TOTAL\b)',
+            stripped,
+            re.IGNORECASE,
+        ):
+            current_item['description'] = (
+                f"{current_item.get('description', '')} {re.sub(r'\\s+', ' ', stripped)}"
+            ).strip(' ,')
+
+    return items
+
+
+def _extract_sport_truck_items_from_layout(filepath):
+    """Parse Sport Truck line items from layout text."""
+    layout_text = extract_layout_text_from_pdf(filepath)
+    if not layout_text:
+        return []
+
+    lines = layout_text.splitlines()
+    header_idx = None
+    for idx, line in enumerate(lines):
+        if all(token in line for token in ('Item / Part Number', 'Unit Price', 'Surcharge')):
+            header_idx = idx
+            break
+    if header_idx is None:
+        return []
+
+    items = []
+    current_part = ''
+    current_item = None
+    qty_row_re = re.compile(
+        r'^\s*(\d+)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$'
+    )
+
+    for raw_line in lines[header_idx + 1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('Comments:') or re.search(r'\bSUB-TOTAL\b', stripped, re.IGNORECASE):
+            break
+
+        if re.fullmatch(r'[A-Z0-9-]+', stripped) and re.search(r'[A-Z]', stripped):
+            current_part = stripped
+            current_item = None
+            continue
+
+        qty_match = qty_row_re.match(stripped)
+        if qty_match and current_part:
+            ordered_qty = qty_match.group(2)
+            shipped_qty = qty_match.group(3)
+            current_item = {
+                'item_number': current_part,
+                'quantity': shipped_qty if shipped_qty not in ('', '0', '0.0') else ordered_qty,
+                'units': 'Each',
+                'description': '',
+                'unit_price': _clean_price(qty_match.group(5)),
+                'amount': _clean_price(qty_match.group(7)),
             }
             items.append(current_item)
             continue
@@ -4111,10 +4686,35 @@ def extract_line_items(text, filepath=None, vendor_name=None):
     Returns:
         list of dicts with item_number, quantity, units, description, unit_price, amount
     """
+    if _is_river_city_vendor_name(vendor_name):
+        river_city_items = _extract_river_city_items_from_layout(filepath)
+        if river_city_items:
+            return river_city_items
+
     if _is_holley_vendor_name(vendor_name):
         holley_items = _extract_holley_items_from_layout(filepath)
         if holley_items:
             return holley_items
+
+    if _is_ats_vendor_name(vendor_name):
+        ats_items = _extract_ats_items_from_layout(filepath)
+        if ats_items:
+            return ats_items
+
+    if _is_isspro_vendor_name(vendor_name):
+        isspro_items = _extract_isspro_items_from_layout(filepath)
+        if isspro_items:
+            return isspro_items
+
+    if _is_rock_krawler_vendor_name(vendor_name):
+        rock_krawler_items = _extract_rock_krawler_items_from_layout(filepath)
+        if rock_krawler_items:
+            return rock_krawler_items
+
+    if _is_sport_truck_vendor_name(vendor_name):
+        sport_truck_items = _extract_sport_truck_items_from_layout(filepath)
+        if sport_truck_items:
+            return sport_truck_items
 
     if _is_valair_vendor_name(vendor_name):
         valair_items = _extract_valair_items_from_layout(filepath)
@@ -4391,7 +4991,169 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
             layout_text = extract_layout_text_from_pdf(filepath)
         return layout_text
 
-    if _is_mishimoto_vendor_name(vendor_name):
+    if _is_river_city_vendor_name(vendor_name):
+        default_address = get_vendor_default_address(vendor_name)
+        if default_address:
+            data['vendor_address'] = default_address
+
+        default_terms = get_vendor_default_terms(vendor_name)
+        if default_terms:
+            data['terms'] = default_terms
+
+        layout = _get_layout_text()
+        if not data.get('invoice_number'):
+            invoice_match = re.search(r'(?im)^\s*INVOICE\s+(\d+)\s*$', layout)
+            if invoice_match:
+                data['invoice_number'] = invoice_match.group(1)
+        if not data.get('date'):
+            date_match = re.search(r'(?im)^\s*DATE\s+([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})\s*$', layout)
+            if date_match:
+                data['date'] = _normalize_date_value(date_match.group(1))
+        if not data.get('po_number'):
+            po_match = re.search(r'(?im)^\s*\w+\s+(\d{4,})\s+Net\s+30\s+Days\s*$', layout)
+            if po_match:
+                data['po_number'] = po_match.group(1)
+        total_match = re.search(r'(?im)^\s*TOTAL\s+(-?[\d,]+\.\d{2})\s*$', layout)
+        if total_match:
+            data['total'] = _clean_signed_price_token(total_match.group(1))
+        if data.get('date'):
+            data['due_date'] = ''
+        for item in (data.get('line_items') or []):
+            if str(item.get('unit_price') or '').strip():
+                continue
+            qty_text = _normalize_qty(item.get('quantity'))
+            amount_text = _clean_price(item.get('amount'))
+            if not qty_text or not amount_text:
+                continue
+            try:
+                qty_value = float(str(qty_text).replace(',', ''))
+                amount_value = float(str(amount_text).replace(',', ''))
+            except (TypeError, ValueError):
+                continue
+            if abs(qty_value) < 1e-9:
+                continue
+            item['unit_price'] = f"{abs(amount_value / qty_value):.2f}"
+        has_freight_item = any(item.get('is_freight') for item in (data.get('line_items') or []))
+        if not has_freight_item and not str(data.get('shipping_cost') or '').strip():
+            data['suppress_zero_shipping_row'] = True
+
+    elif _is_ats_vendor_name(vendor_name):
+        default_address = get_vendor_default_address(vendor_name)
+        if default_address:
+            data['vendor_address'] = default_address
+
+        default_terms = get_vendor_default_terms(vendor_name)
+        if default_terms:
+            data['terms'] = default_terms
+
+        flat_text = re.sub(r'\s+', ' ', text)
+        invoice_match = re.search(r'#?(INVC\d{4,})\b', flat_text, re.IGNORECASE)
+        if invoice_match:
+            data['invoice_number'] = invoice_match.group(1).upper()
+
+        date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})\s+#INVC\d{4,}\b', flat_text, re.IGNORECASE)
+        if date_match:
+            data['date'] = _normalize_date_value(date_match.group(1))
+
+        ship_to_lines = _extract_ats_ship_to_lines(filepath)
+        customer = _clean_ship_to_contact_name(_customer_name_from_ship_to_lines(ship_to_lines))
+        if customer:
+            data['customer'] = customer
+
+        if data.get('date'):
+            data['due_date'] = ''
+        has_freight_item = any(item.get('is_freight') for item in (data.get('line_items') or []))
+        if not has_freight_item and not str(data.get('shipping_cost') or '').strip():
+            data['suppress_zero_shipping_row'] = True
+
+    elif _is_isspro_vendor_name(vendor_name):
+        default_address = get_vendor_default_address(vendor_name)
+        if default_address:
+            data['vendor_address'] = default_address
+
+        default_terms = get_vendor_default_terms(vendor_name)
+        if default_terms:
+            data['terms'] = default_terms
+
+        layout = _get_layout_text()
+        flat_text = re.sub(r'\s+', ' ', text)
+        if not data.get('invoice_number'):
+            invoice_match = re.search(r'\bINVOICE\s+(\d{5,})\b', flat_text, re.IGNORECASE)
+            if invoice_match:
+                data['invoice_number'] = invoice_match.group(1)
+        if not data.get('po_number'):
+            po_match = re.search(r'CUSTOMER\s+PURCHASE\s+ORDER\s+NBR\s+DATE\s+SHIPPED\s+(\d{4,})\s+\d{2}/\d{2}/\d{2}', flat_text, re.IGNORECASE)
+            if po_match:
+                data['po_number'] = po_match.group(1)
+        if not data.get('date'):
+            date_match = re.search(r'\b\d{7}\s+(\d{2}/\d{2}/\d{2})\b', flat_text)
+            if date_match:
+                data['date'] = _normalize_date_value(date_match.group(1))
+        ship_to_lines = _extract_isspro_ship_to_lines(filepath)
+        customer = _clean_ship_to_contact_name(_customer_name_from_ship_to_lines(ship_to_lines))
+        if customer:
+            data['customer'] = customer
+        if data.get('date'):
+            data['due_date'] = ''
+        total_match = re.search(r'(?m)^\s*TOTAL\s+([\d,]+\.\d{2})\s*$', layout, re.IGNORECASE)
+        if total_match:
+            data['total'] = _clean_price(total_match.group(1))
+        has_freight_item = any(item.get('is_freight') for item in (data.get('line_items') or []))
+        if not has_freight_item and not str(data.get('shipping_cost') or '').strip():
+            data['suppress_zero_shipping_row'] = True
+
+    elif _is_rock_krawler_vendor_name(vendor_name):
+        default_address = get_vendor_default_address(vendor_name)
+        if default_address:
+            data['vendor_address'] = default_address
+
+        default_terms = get_vendor_default_terms(vendor_name)
+        if default_terms:
+            data['terms'] = default_terms
+
+        layout = _get_layout_text()
+        rk_po_number = _extract_rock_krawler_po_number(filepath)
+        if rk_po_number:
+            data['po_number'] = rk_po_number
+        ship_to_lines = _extract_rock_krawler_ship_to_lines(filepath)
+        customer = _clean_ship_to_contact_name(_customer_name_from_ship_to_lines(ship_to_lines))
+        if customer:
+            data['customer'] = customer
+        shipping_match = re.search(r'\bSHIPPING\s+([\d,]+\.\d{2})\b', layout, re.IGNORECASE)
+        if shipping_match:
+            data['shipping_cost'] = _clean_price(shipping_match.group(1))
+            data['shipping_description'] = 'Freight'
+        has_freight_item = any(item.get('is_freight') for item in (data.get('line_items') or []))
+        if not has_freight_item and not str(data.get('shipping_cost') or '').strip():
+            data['suppress_zero_shipping_row'] = True
+
+    elif _is_sport_truck_vendor_name(vendor_name):
+        default_address = get_vendor_default_address(vendor_name)
+        if default_address:
+            data['vendor_address'] = default_address
+
+        default_terms = get_vendor_default_terms(vendor_name)
+        if default_terms:
+            data['terms'] = default_terms
+
+        flat_text = re.sub(r'\s+', ' ', text)
+        if not data.get('invoice_number'):
+            invoice_match = re.search(r'P\.O\.\s*Box\s+\d+\s+(\d{6,})\b', flat_text, re.IGNORECASE)
+            if invoice_match:
+                data['invoice_number'] = invoice_match.group(1)
+        ship_to_lines = _extract_sport_truck_ship_to_lines(filepath)
+        customer = _clean_ship_to_contact_name(_customer_name_from_ship_to_lines(ship_to_lines))
+        if customer:
+            data['customer'] = customer
+        if data.get('date'):
+            data['date'] = _normalize_date_value(data.get('date'))
+        if data.get('date'):
+            data['due_date'] = ''
+        has_freight_item = any(item.get('is_freight') for item in (data.get('line_items') or []))
+        if not has_freight_item and not str(data.get('shipping_cost') or '').strip():
+            data['suppress_zero_shipping_row'] = True
+
+    elif _is_mishimoto_vendor_name(vendor_name):
         layout = _get_layout_text()
         header_text = layout.split('Bill To', 1)[0] if 'Bill To' in layout else layout[:500]
         invoice_match = re.search(r'\bINV\d{5,}\b', layout, re.IGNORECASE)
@@ -4994,6 +5756,14 @@ def parse_invoice(filepath, status_callback=None, sender_email='', sender_header
     ship_to_lines = None
     if _is_mishimoto_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_mishimoto_ship_to_lines(filepath)
+    elif _is_ats_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_ats_ship_to_lines(filepath)
+    elif _is_isspro_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_isspro_ship_to_lines(filepath)
+    elif _is_rock_krawler_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_rock_krawler_ship_to_lines(filepath)
+    elif _is_sport_truck_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_sport_truck_ship_to_lines(filepath)
     elif _is_pt_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_pt_ship_to_lines(filepath)
     elif _is_merchant_vendor_name(data.get('vendor', '')) or _is_kc_turbos_vendor_name(data.get('vendor', '')):
