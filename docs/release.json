@@ -1,19 +1,19 @@
 {
-  "version": "1.2.9",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.9/InvoiceExtractor.exe",
-  "sha256": "b84085cf4bdb9203ca62af7c11f250a429385c2a8eae37fe9b59fa0ead0958e4",
-  "notes": "Normalize Valair vendor mapping and clean VA training output",
-  "published_at": "03/27/2026 21:10:39",
+  "version": "1.2.10",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.10/InvoiceExtractor.exe",
+  "sha256": "d9d529ec425eae38478fc56bae05ef5f84f99fff41ec8aee435aba1d877e5363",
+  "notes": "Vendor-specific fixes for River City, ATS, ISSPRO, Rock Krawler, Sport Truck, plus packaging hardening for the updater.",
+  "published_at": "03/28/2026 00:14:50",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.9/InvoiceExtractor.exe",
-      "sha256": "b84085cf4bdb9203ca62af7c11f250a429385c2a8eae37fe9b59fa0ead0958e4"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.10/InvoiceExtractor.exe",
+      "sha256": "d9d529ec425eae38478fc56bae05ef5f84f99fff41ec8aee435aba1d877e5363"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.9/app-vendors.csv",
-      "sha256": "7c0bce6a1381601e2789aa8b3ad3cee388f2f715258a789bfab4d696dbfbf114"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.10/app-vendors.csv",
+      "sha256": "673e7fd043e47c0a636680c376854e014d18f448cbfa1fc2108285dd6b7a8355"
     }
   ]
 }
