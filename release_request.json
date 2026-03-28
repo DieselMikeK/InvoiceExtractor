@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Normalize Valair vendor mapping and clean VA training output",
-    "requested_at":  "2026-03-27T21:08:58.4145292Z"
+    "notes":  "Vendor-specific fixes for River City, ATS, ISSPRO, Rock Krawler, Sport Truck, plus packaging hardening for the updater.",
+    "requested_at":  "2026-03-28T00:05:55.9451519Z"
 }
