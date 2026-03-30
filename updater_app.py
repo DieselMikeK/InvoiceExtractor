@@ -201,15 +201,17 @@ class UpdaterWindow:
         return target_path
 
     def _build_release_entry(self, relative_path, download_url, sha256):
+        normalized_relative_path = str(relative_path).replace("\\", "/")
+        staged_parts = normalized_relative_path.split("/")
         target_path = self._resolve_target_path(relative_path)
         return {
-            "relative_path": str(relative_path).replace("\\", "/"),
+            "relative_path": normalized_relative_path,
             "download_url": str(download_url or "").strip(),
             "sha256": str(sha256 or "").strip().lower(),
             "target_path": target_path,
             "staged_path": os.path.join(
                 self.staging_dir,
-                *str(relative_path).replace("\\", "/").split("/"),
+                *(staged_parts[:-1] + [f"{staged_parts[-1]}.download"]),
             ),
             "backup_path": target_path + ".bak",
             "is_main_exe": os.path.abspath(target_path) == self.target_exe,
@@ -296,7 +298,10 @@ class UpdaterWindow:
 
     def _install_one_file(self, entry):
         if not os.path.exists(entry["staged_path"]):
-            raise RuntimeError(f"Downloaded file was not found for {entry['relative_path']}")
+            raise RuntimeError(
+                f"Downloaded file was not found for {entry['relative_path']}. "
+                "Windows Security may have removed the temporary download before install."
+            )
 
         os.makedirs(os.path.dirname(entry["target_path"]), exist_ok=True)
         if os.path.exists(entry["backup_path"]):

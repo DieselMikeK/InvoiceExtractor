@@ -76,6 +76,11 @@ foreach ($payloadFile in @(
         source_path   = Join-Path $repoRoot 'vendors.csv'
         relative_path = 'app/vendors.csv'
         asset_name    = 'app-vendors.csv'
+    },
+    [ordered]@{
+        source_path   = $updaterExe
+        relative_path = 'update/InvoiceExtractorUpdater.exe'
+        asset_name    = 'update-InvoiceExtractorUpdater.exe'
     }
 )) {
     if (-not (Test-Path $payloadFile.source_path)) {

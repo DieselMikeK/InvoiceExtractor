@@ -525,7 +525,10 @@ class InvoiceExtractorGUI:
             return
 
         try:
-            updater_exe = stage_updater_executable(self.app_version)
+            updater_exe = stage_updater_executable(
+                manifest.get('version') or self.app_version,
+                manifest=manifest,
+            )
             manifest_path = stage_release_manifest(manifest, manifest.get('version'))
         except Exception as exc:
             messagebox.showerror(

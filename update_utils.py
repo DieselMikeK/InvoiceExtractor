@@ -19,6 +19,7 @@ except Exception:  # pragma: no cover - optional fallback
 APP_NAME = "Invoice Extractor"
 MAIN_EXECUTABLE_NAME = "InvoiceExtractor.exe"
 UPDATER_EXECUTABLE_NAME = "InvoiceExtractorUpdater.exe"
+UPDATER_RELEASE_RELATIVE_PATH = f"update/{UPDATER_EXECUTABLE_NAME}"
 VERSION_FILENAME = "VERSION"
 PRIMARY_RELEASE_RELATIVE_PATH = MAIN_EXECUTABLE_NAME
 DEFAULT_UPDATE_MANIFEST_URL = (
@@ -256,6 +257,16 @@ def normalize_release_manifest(data, source_url=""):
     }
 
 
+def find_release_file(manifest, relative_path):
+    """Return a normalized manifest file entry by relative path, if present."""
+    normalized_manifest = normalize_release_manifest(manifest)
+    target_key = normalize_release_relative_path(relative_path).lower()
+    for entry in normalized_manifest.get("files") or []:
+        if entry["relative_path"].lower() == target_key:
+            return entry
+    return None
+
+
 def fetch_release_manifest(required_dir=None, timeout=5):
     """Fetch and parse the remote release manifest."""
     url = get_update_manifest_url(required_dir)
@@ -277,6 +288,54 @@ def compute_file_sha256(path):
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def download_release_file_to_path(entry, destination_path, timeout=60):
+    """Download a release file entry to a specific path and verify its hash."""
+    normalized_entry = normalize_release_file(entry)
+    download_url = str(normalized_entry.get("download_url") or "").strip()
+    if not download_url:
+        raise ValueError(
+            f"Release file '{normalized_entry['relative_path']}' is missing a download URL."
+        )
+
+    expected_hash = str(normalized_entry.get("sha256") or "").strip().lower()
+    destination_path = os.path.abspath(destination_path)
+    os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+
+    if expected_hash and os.path.exists(destination_path):
+        try:
+            if compute_file_sha256(destination_path).lower() == expected_hash:
+                return destination_path
+        except OSError:
+            pass
+
+    temp_path = destination_path + ".download"
+    req = urllib.request.Request(
+        download_url,
+        headers={"User-Agent": f"{APP_NAME.replace(' ', '')}/UpdaterBootstrap"},
+    )
+
+    try:
+        with open_url_with_tls_fallback(req, timeout=timeout) as response:
+            with open(temp_path, "wb") as f:
+                shutil.copyfileobj(response, f)
+
+        if expected_hash:
+            actual_hash = compute_file_sha256(temp_path).lower()
+            if actual_hash != expected_hash:
+                raise ValueError(
+                    f"Release file '{normalized_entry['relative_path']}' hash does not match."
+                )
+
+        os.replace(temp_path, destination_path)
+        return destination_path
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
 
 def find_updater_source_path():
@@ -301,9 +360,8 @@ def find_updater_source_path():
     )
 
 
-def stage_updater_executable(current_version):
-    """Copy the updater helper to a stable temp location and return that path."""
-    source_path = find_updater_source_path()
+def stage_updater_executable(current_version, manifest=None):
+    """Stage the updater helper from the release manifest when available, else local bundle."""
     staged_dir = os.path.join(tempfile.gettempdir(), "InvoiceExtractorUpdater")
     os.makedirs(staged_dir, exist_ok=True)
 
@@ -313,6 +371,17 @@ def stage_updater_executable(current_version):
         f"{version_tag}-{UPDATER_EXECUTABLE_NAME}",
     )
 
+    manifest_entry = None
+    if manifest:
+        try:
+            manifest_entry = find_release_file(manifest, UPDATER_RELEASE_RELATIVE_PATH)
+        except Exception:
+            manifest_entry = None
+
+    if manifest_entry and str(manifest_entry.get("download_url") or "").strip():
+        return download_release_file_to_path(manifest_entry, staged_path)
+
+    source_path = find_updater_source_path()
     needs_copy = True
     if os.path.exists(staged_path):
         try:
