@@ -3667,6 +3667,28 @@ def _extract_valair_items_from_layout(filepath):
     return items
 
 
+def _extract_valair_shipping_from_layout(filepath):
+    """Extract Valair freight from the line-item area, including zero-dollar freight rows."""
+    layout_text = extract_layout_text_from_pdf(filepath)
+    if not layout_text:
+        return '', ''
+
+    freight_match = re.search(
+        r'(?im)^\s*(Freight\s+Charges)\s+\1\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$',
+        layout_text,
+    )
+    if not freight_match:
+        return '', ''
+
+    rate = _clean_price(freight_match.group(2))
+    amount = _clean_price(freight_match.group(3))
+    shipping_cost = amount or rate
+    if shipping_cost == '':
+        return '', ''
+
+    return shipping_cost, 'Freight Charges'
+
+
 def _extract_ats_items_from_layout(filepath):
     """Parse ATS item rows from layout text."""
     layout_text = extract_layout_text_from_pdf(filepath)
@@ -5216,10 +5238,39 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
             )
             if tracking_match:
                 data['tracking_number'] = tracking_match.group(1)
-        has_freight_item = any(item.get('is_freight') for item in (data.get('line_items') or []))
+        freight_items = [item for item in (data.get('line_items') or []) if item.get('is_freight')]
         shipping_cost = str(data.get('shipping_cost') or '').strip()
-        if not has_freight_item and not shipping_cost:
-            data['suppress_zero_shipping_row'] = True
+        shipping_desc = str(data.get('shipping_description') or '').strip()
+
+        if not shipping_cost and freight_items:
+            first_freight_item = freight_items[0]
+            shipping_cost = _clean_price(
+                first_freight_item.get('amount') or first_freight_item.get('unit_price') or ''
+            )
+            if shipping_cost:
+                data['shipping_cost'] = shipping_cost
+            if not shipping_desc:
+                data['shipping_description'] = (
+                    first_freight_item.get('description')
+                    or first_freight_item.get('item_number')
+                    or 'Freight'
+                )
+                shipping_desc = str(data.get('shipping_description') or '').strip()
+
+        if not shipping_cost:
+            layout_shipping_cost, layout_shipping_desc = _extract_valair_shipping_from_layout(filepath)
+            if layout_shipping_cost:
+                data['shipping_cost'] = layout_shipping_cost
+                shipping_cost = layout_shipping_cost
+            if layout_shipping_desc and not shipping_desc:
+                data['shipping_description'] = layout_shipping_desc
+                shipping_desc = layout_shipping_desc
+
+        if not shipping_cost:
+            data['shipping_cost'] = '0'
+        if not shipping_desc:
+            data['shipping_description'] = 'Freight'
+        data['suppress_zero_shipping_row'] = False
 
     elif _is_pt_vendor_name(vendor_name):
         layout = _get_layout_text()
