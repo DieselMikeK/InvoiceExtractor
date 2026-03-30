@@ -1,24 +1,24 @@
 {
-  "version": "1.2.13",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.13/InvoiceExtractor.exe",
-  "sha256": "fc3ce103a55eece520442474a3e8e44c16eee1083602ecad1f0b160df66b0ac0",
-  "notes": "Patch Valair shipping export so freight is always populated, including zero-dollar Freight Charges rows.",
-  "published_at": "03/30/2026 20:54:00",
+  "version": "1.2.14",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.14/InvoiceExtractor.exe",
+  "sha256": "0a9c31b0f523040b1f4d4bc60bd6b8665ab26f834b9df20b6ed019bfb54474ec",
+  "notes": "Populate freight and drop-ship category rows with Qty and Amount for QuickBooks upload preview compatibility.",
+  "published_at": "03/30/2026 22:25:29",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.13/InvoiceExtractor.exe",
-      "sha256": "fc3ce103a55eece520442474a3e8e44c16eee1083602ecad1f0b160df66b0ac0"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.14/InvoiceExtractor.exe",
+      "sha256": "0a9c31b0f523040b1f4d4bc60bd6b8665ab26f834b9df20b6ed019bfb54474ec"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.13/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.14/app-vendors.csv",
       "sha256": "673e7fd043e47c0a636680c376854e014d18f448cbfa1fc2108285dd6b7a8355"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.13/update-InvoiceExtractorUpdater.exe",
-      "sha256": "a06493626dd31afe506e2c303570c84265014d6ee83426d3ba3ccc1724def3f0"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.14/update-InvoiceExtractorUpdater.exe",
+      "sha256": "9eac8b2469221d01faa38a2bf1353dec5c54b3c13575ffac2a25cad8659453ac"
     }
   ]
 }
