@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Vendor-specific fixes for River City, ATS, ISSPRO, Rock Krawler, Sport Truck, plus packaging hardening for the updater.",
-    "requested_at":  "2026-03-28T00:13:08.9650154Z"
+    "notes":  "Fix updater staging and bootstrap path so updates can use the manifest updater helper and avoid temp EXE staging issues.",
+    "requested_at":  "2026-03-30T17:16:43.5990248Z"
 }
