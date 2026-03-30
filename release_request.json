@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Populate freight and drop-ship category rows with Qty and Amount for QuickBooks upload preview compatibility.",
-    "requested_at":  "2026-03-30T22:23:06.9884899Z"
+    "notes":  "Rollback the QuickBooks shipping Qty/Amount exporter experiment and restore the prior shipping-row format.",
+    "requested_at":  "2026-03-30T22:57:16.0921442Z"
 }
