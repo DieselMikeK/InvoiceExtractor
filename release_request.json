@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix updater staging and bootstrap path so updates can use the manifest updater helper and avoid temp EXE staging issues.",
-    "requested_at":  "2026-03-30T17:16:43.5990248Z"
+    "notes":  "No functional changes. Update trigger for updater validation.",
+    "requested_at":  "2026-03-30T17:43:18.6614018Z"
 }
