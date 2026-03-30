@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Patch Valair shipping export so freight is always populated, including zero-dollar Freight Charges rows.",
-    "requested_at":  "2026-03-30T20:51:55.9112335Z"
+    "notes":  "Populate freight and drop-ship category rows with Qty and Amount for QuickBooks upload preview compatibility.",
+    "requested_at":  "2026-03-30T22:23:06.9884899Z"
 }
