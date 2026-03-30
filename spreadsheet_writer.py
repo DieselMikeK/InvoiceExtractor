@@ -2,7 +2,6 @@
 import csv
 import os
 import re
-from decimal import Decimal, InvalidOperation
 from copy import copy
 from datetime import date, datetime
 from openpyxl import Workbook, load_workbook
@@ -503,35 +502,6 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         if abs(num - round(num)) < 1e-9:
             return str(int(round(num)))
         return s
-    def _format_money_value(value):
-        if value is None:
-            return ''
-        s = str(value).strip().replace(',', '').replace('$', '')
-        if not s:
-            return ''
-        try:
-            amount = Decimal(s)
-        except (InvalidOperation, ValueError):
-            return str(value).strip()
-        if amount == 0:
-            return '0.00'
-        return f"{amount.quantize(Decimal('0.01'))}"
-    def _category_row_amount(rate_value, qty_value='', explicit_amount=''):
-        explicit_formatted = _format_money_value(explicit_amount)
-        if explicit_formatted:
-            return explicit_formatted
-        rate_formatted = _format_money_value(rate_value)
-        if not rate_formatted:
-            return ''
-        if qty_value:
-            try:
-                return _format_money_value(
-                    Decimal(str(rate_value).replace(',', '').replace('$', ''))
-                    * Decimal(str(qty_value).replace(',', ''))
-                )
-            except (InvalidOperation, ValueError):
-                pass
-        return rate_formatted
 
     def _is_discount(item):
         item_num = str(item.get('item_number', '')).lower()
@@ -622,14 +592,6 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     else:
         first_product_service = ''
         first_sku = ''
-    first_qty = _normalize_qty_value(first_item.get('quantity', ''))
-    first_amount = ''
-    if first_item and first_type == TYPE_CATEGORY:
-        first_amount = _category_row_amount(
-            first_item.get('unit_price', ''),
-            first_qty,
-            first_item.get('amount', ''),
-        )
     row_data = {
         'bill_no': bill_no,
         'vendor': vendor,
@@ -643,10 +605,10 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         'category': first_category if first_item else '',
         'product_service': first_product_service,
         'sku': first_sku,
-        'qty': first_qty,
+        'qty': _normalize_qty_value(first_item.get('quantity', '')),
         'rate': first_item.get('unit_price', ''),
         'description': _description_for_item(first_item, first_is_discount, first_is_core, first_is_freight),
-        'amount': first_amount,
+        'amount': '',
         'billable': '',
         'customer_project': customer,
         'tax_rate': '',
@@ -672,15 +634,6 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         is_core = _is_core(item)
         is_ere = _is_ere(item)
         category = _row_category_for_item(item, is_freight)
-        row_type = _row_type_for_item(item, is_freight)
-        row_qty = _normalize_qty_value(item.get('quantity', ''))
-        row_amount = ''
-        if row_type == TYPE_CATEGORY:
-            row_amount = _category_row_amount(
-                item.get('unit_price', ''),
-                row_qty,
-                item.get('amount', ''),
-            )
         row_data = {
             'bill_no': shared_invoice_fields['bill_no'],
             'vendor': shared_invoice_fields['vendor'],
@@ -690,14 +643,14 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'due_date': shared_invoice_fields['due_date'],
             'location': '',
             'memo': '',
-            'type': row_type,
+            'type': _row_type_for_item(item, is_freight),
             'category': category,
             'product_service': _product_service_for_item(item, is_discount, is_core, is_ere, is_freight),
             'sku': _sku_for_item(item),
-            'qty': row_qty,
+            'qty': _normalize_qty_value(item.get('quantity', '')),
             'rate': item.get('unit_price', ''),
             'description': _description_for_item(item, is_discount, is_core, is_freight),
-            'amount': row_amount,
+            'amount': '',
             'billable': '',
             'customer_project': '',
             'tax_rate': '',
@@ -722,10 +675,9 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     shipping_rate = shipping_cost if shipping_val > 0 else '0'
     shipping_desc = invoice_data.get('shipping_description', 'Shipping')
     shipping_label = _normalize_shipping_label(shipping_desc)
-    shipping_qty = _normalize_qty_value(invoice_data.get('shipping_quantity', ''))
-    if not shipping_qty:
-        shipping_qty = '1'
-    shipping_amount = _category_row_amount(shipping_rate, shipping_qty)
+    shipping_qty = ''
+    if shipping_label == 'Drop Ship':
+        shipping_qty = _normalize_qty_value(invoice_data.get('shipping_quantity', ''))
     shipping_category = PURCHASES_CATEGORY if shipping_label == 'Drop Ship' else FREIGHT_CATEGORY
     shipping_type = TYPE_CATEGORY
     shipping_product_service = (
@@ -753,7 +705,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'qty': shipping_qty,
             'rate': shipping_rate,
             'description': shipping_desc,
-            'amount': shipping_amount,
+            'amount': '',
             'billable': '',
             'customer_project': '',
             'tax_rate': '',
