@@ -1,19 +1,24 @@
 {
-  "version": "1.2.10",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.10/InvoiceExtractor.exe",
-  "sha256": "d9d529ec425eae38478fc56bae05ef5f84f99fff41ec8aee435aba1d877e5363",
-  "notes": "Vendor-specific fixes for River City, ATS, ISSPRO, Rock Krawler, Sport Truck, plus packaging hardening for the updater.",
-  "published_at": "03/28/2026 00:14:50",
+  "version": "1.2.11",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.11/InvoiceExtractor.exe",
+  "sha256": "ad2b7f3aae5aa2146aa6dcd18b8ae17399e4ec801e92ebc01a975c54e2eb6438",
+  "notes": "Fix updater staging and bootstrap path so updates can use the manifest updater helper and avoid temp EXE staging issues.",
+  "published_at": "03/30/2026 17:18:38",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.10/InvoiceExtractor.exe",
-      "sha256": "d9d529ec425eae38478fc56bae05ef5f84f99fff41ec8aee435aba1d877e5363"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.11/InvoiceExtractor.exe",
+      "sha256": "ad2b7f3aae5aa2146aa6dcd18b8ae17399e4ec801e92ebc01a975c54e2eb6438"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.10/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.11/app-vendors.csv",
       "sha256": "673e7fd043e47c0a636680c376854e014d18f448cbfa1fc2108285dd6b7a8355"
+    },
+    {
+      "relative_path": "update/InvoiceExtractorUpdater.exe",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.11/update-InvoiceExtractorUpdater.exe",
+      "sha256": "7f9f590b2385d54dc491fd59dc4fa4213f3c6e9b13324395095aae2f6c914bf3"
     }
   ]
 }
