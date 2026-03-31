@@ -1,24 +1,24 @@
 {
-  "version": "1.2.17",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.17/InvoiceExtractor.exe",
-  "sha256": "c07524b0d19d0162c29701718d18b291821510a12791586b7a6e12a66c7ebb28",
-  "notes": "Parse Sport Truck freight footer rows so Sport Truck invoices export the freight row.",
-  "published_at": "03/31/2026 20:35:35",
+  "version": "1.2.18",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.18/InvoiceExtractor.exe",
+  "sha256": "8df54fe5322ac69f538e97fbeacaaa3cd9295beedc0346793373125fdc38d7a4",
+  "notes": "No functional changes. Update trigger for updater validation.",
+  "published_at": "03/31/2026 20:45:11",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.17/InvoiceExtractor.exe",
-      "sha256": "c07524b0d19d0162c29701718d18b291821510a12791586b7a6e12a66c7ebb28"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.18/InvoiceExtractor.exe",
+      "sha256": "8df54fe5322ac69f538e97fbeacaaa3cd9295beedc0346793373125fdc38d7a4"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.17/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.18/app-vendors.csv",
       "sha256": "2e83c7554e948b7db8914b1e5adc8db3022bcc10ff8e7a8369257c50598fede9"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.17/update-InvoiceExtractorUpdater.exe",
-      "sha256": "2021ede895e7aab21180f300ae557aa7b23eb1599de9ffb7a64c208f62d965bf"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.18/update-InvoiceExtractorUpdater.exe",
+      "sha256": "6e7435970e0aa8059163cf0587e766ff3b7d131051d294df5448067642faec32"
     }
   ]
 }
