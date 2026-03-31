@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Update Diamond Eye canonical vendor name to \u0027Diamond Eye Manufacturing - .00 DS Fee\u0027 and normalize terms to Net 30.",
-    "requested_at":  "2026-03-31T16:35:13.4216742Z"
+    "notes":  "Parse Sport Truck freight footer rows so Sport Truck invoices export the freight row.",
+    "requested_at":  "2026-03-31T20:33:07.7939848Z"
 }
