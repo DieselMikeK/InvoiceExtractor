@@ -1,24 +1,24 @@
 {
-  "version": "1.2.15",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.15/InvoiceExtractor.exe",
-  "sha256": "e7ce1f6247078bea9e1225ccb08a1d89ab8d9ab47107b38ede00a48f434d1a1b",
-  "notes": "Rollback the QuickBooks shipping Qty/Amount exporter experiment and restore the prior shipping-row format.",
-  "published_at": "03/30/2026 22:59:07",
+  "version": "1.2.16",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.16/InvoiceExtractor.exe",
+  "sha256": "998c1d6bc34adfa2366a4f6adf3b9c84af5ed5651528c1135b87327d1fc26201",
+  "notes": "Update Diamond Eye canonical vendor name to 'Diamond Eye Manufacturing - .00 DS Fee' and normalize terms to Net 30.",
+  "published_at": "03/31/2026 16:37:32",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.15/InvoiceExtractor.exe",
-      "sha256": "e7ce1f6247078bea9e1225ccb08a1d89ab8d9ab47107b38ede00a48f434d1a1b"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.16/InvoiceExtractor.exe",
+      "sha256": "998c1d6bc34adfa2366a4f6adf3b9c84af5ed5651528c1135b87327d1fc26201"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.15/app-vendors.csv",
-      "sha256": "673e7fd043e47c0a636680c376854e014d18f448cbfa1fc2108285dd6b7a8355"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.16/app-vendors.csv",
+      "sha256": "2e83c7554e948b7db8914b1e5adc8db3022bcc10ff8e7a8369257c50598fede9"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.15/update-InvoiceExtractorUpdater.exe",
-      "sha256": "72c5192073273116a47706ab8a1839b3792854ec786b6b2e6b18d77ac9a6675e"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.16/update-InvoiceExtractorUpdater.exe",
+      "sha256": "9ebe73393af26dfa3f5fefd802db8fa63306c8767906ebd0c58ae0a178c9a79e"
     }
   ]
 }
