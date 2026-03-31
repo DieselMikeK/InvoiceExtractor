@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Rollback the QuickBooks shipping Qty/Amount exporter experiment and restore the prior shipping-row format.",
-    "requested_at":  "2026-03-30T22:57:16.0921442Z"
+    "notes":  "Update Diamond Eye canonical vendor name to \u0027Diamond Eye Manufacturing - .00 DS Fee\u0027 and normalize terms to Net 30.",
+    "requested_at":  "2026-03-31T16:35:13.4216742Z"
 }
