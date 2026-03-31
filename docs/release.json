@@ -1,24 +1,24 @@
 {
-  "version": "1.2.16",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.16/InvoiceExtractor.exe",
-  "sha256": "998c1d6bc34adfa2366a4f6adf3b9c84af5ed5651528c1135b87327d1fc26201",
-  "notes": "Update Diamond Eye canonical vendor name to 'Diamond Eye Manufacturing - .00 DS Fee' and normalize terms to Net 30.",
-  "published_at": "03/31/2026 16:37:32",
+  "version": "1.2.17",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.17/InvoiceExtractor.exe",
+  "sha256": "c07524b0d19d0162c29701718d18b291821510a12791586b7a6e12a66c7ebb28",
+  "notes": "Parse Sport Truck freight footer rows so Sport Truck invoices export the freight row.",
+  "published_at": "03/31/2026 20:35:35",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.16/InvoiceExtractor.exe",
-      "sha256": "998c1d6bc34adfa2366a4f6adf3b9c84af5ed5651528c1135b87327d1fc26201"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.17/InvoiceExtractor.exe",
+      "sha256": "c07524b0d19d0162c29701718d18b291821510a12791586b7a6e12a66c7ebb28"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.16/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.17/app-vendors.csv",
       "sha256": "2e83c7554e948b7db8914b1e5adc8db3022bcc10ff8e7a8369257c50598fede9"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.16/update-InvoiceExtractorUpdater.exe",
-      "sha256": "9ebe73393af26dfa3f5fefd802db8fa63306c8767906ebd0c58ae0a178c9a79e"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.17/update-InvoiceExtractorUpdater.exe",
+      "sha256": "2021ede895e7aab21180f300ae557aa7b23eb1599de9ffb7a64c208f62d965bf"
     }
   ]
 }
