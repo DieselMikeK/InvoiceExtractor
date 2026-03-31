@@ -5158,6 +5158,7 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
         if default_terms:
             data['terms'] = default_terms
 
+        layout = _get_layout_text()
         flat_text = re.sub(r'\s+', ' ', text)
         if not data.get('invoice_number'):
             invoice_match = re.search(r'P\.O\.\s*Box\s+\d+\s+(\d{6,})\b', flat_text, re.IGNORECASE)
@@ -5171,6 +5172,14 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
             data['date'] = _normalize_date_value(data.get('date'))
         if data.get('date'):
             data['due_date'] = ''
+        shipping_match = re.search(
+            r'\bFREIGHT(?:\s+FOB:ORIGIN:)?\s+([\d,]+\.\d{2})\b',
+            layout,
+            re.IGNORECASE,
+        )
+        if shipping_match:
+            data['shipping_cost'] = _clean_price(shipping_match.group(1))
+            data['shipping_description'] = 'Freight'
         has_freight_item = any(item.get('is_freight') for item in (data.get('line_items') or []))
         if not has_freight_item and not str(data.get('shipping_cost') or '').strip():
             data['suppress_zero_shipping_row'] = True
