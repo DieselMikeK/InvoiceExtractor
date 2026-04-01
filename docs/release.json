@@ -1,24 +1,24 @@
 {
-  "version": "1.2.19",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.19/InvoiceExtractor.exe",
-  "sha256": "e37bf46a41197e19f1b74e0e3f93e54125a596d0b965697c23eae974e9d83e95",
-  "notes": "Keep Diamond Eye zero-shipping rows in the master output and remove them only during CSV batch export.",
-  "published_at": "04/01/2026 17:25:39",
+  "version": "1.2.20",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.20/InvoiceExtractor.exe",
+  "sha256": "9074637652a8210f6ae2849ee85973793317099846533355fd940158b5749324",
+  "notes": "Export Diamond Eye invoice rows as Category Details with Category/Account Purchases and blank Product/Service for QuickBooks import.",
+  "published_at": "04/01/2026 21:01:14",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.19/InvoiceExtractor.exe",
-      "sha256": "e37bf46a41197e19f1b74e0e3f93e54125a596d0b965697c23eae974e9d83e95"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.20/InvoiceExtractor.exe",
+      "sha256": "9074637652a8210f6ae2849ee85973793317099846533355fd940158b5749324"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.19/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.20/app-vendors.csv",
       "sha256": "2e83c7554e948b7db8914b1e5adc8db3022bcc10ff8e7a8369257c50598fede9"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.19/update-InvoiceExtractorUpdater.exe",
-      "sha256": "60283a76eb9a45f10e71ada9c9522f4aac3c5614f3d4ffae07c85de9266be242"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.20/update-InvoiceExtractorUpdater.exe",
+      "sha256": "22a8dd894a7b15ded368abbcda4553cc9fd163ba0cbbbd0f08cae2fec809c2b1"
     }
   ]
 }
