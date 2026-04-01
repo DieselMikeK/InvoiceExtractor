@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Keep Diamond Eye zero-shipping rows in the master output and remove them only during CSV batch export.",
-    "requested_at":  "2026-04-01T17:23:23.2386975Z"
+    "notes":  "Export Diamond Eye invoice rows as Category Details with Category/Account Purchases and blank Product/Service for QuickBooks import.",
+    "requested_at":  "2026-04-01T20:58:59.5558967Z"
 }
