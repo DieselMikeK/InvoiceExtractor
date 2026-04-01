@@ -197,6 +197,30 @@ def _to_float_value(value):
         return None
 
 
+def _is_diamond_eye_vendor_name(name):
+    key = _normalize_vendor_key(name)
+    return bool(key and 'diamondeyemanufacturing' in key)
+
+
+def _is_diamond_eye_zero_shipping_batch_row(row):
+    if not _is_diamond_eye_vendor_name(row.get('vendor', '')):
+        return False
+
+    product_service = str(row.get('product_service', '')).strip().lower()
+    if product_service not in {'shipping', 'freight', 'drop ship'}:
+        return False
+
+    category = str(row.get('category', '')).strip().lower()
+    if category not in {'freight and shipping costs', 'purchases'}:
+        return False
+
+    if str(row.get('sku', '')).strip():
+        return False
+
+    rate_value = _to_float_value(row.get('rate', ''))
+    return rate_value is not None and rate_value <= 0
+
+
 def _extract_related_order_numbers(sn_data):
     numbers = []
     seen = set()
@@ -1979,6 +2003,17 @@ class InvoiceExtractorGUI:
         if dropped_summary_rows:
             self.log(
                 f"Removed {dropped_summary_rows} Total Amount summary row(s) from CSV batches.",
+                "info"
+            )
+
+        filtered_rows = [r for r in rows if not _is_diamond_eye_zero_shipping_batch_row(r)]
+        dropped_diamond_eye_shipping_rows = len(rows) - len(filtered_rows)
+        rows = filtered_rows
+        if dropped_diamond_eye_shipping_rows:
+            self.log(
+                "Removed "
+                f"{dropped_diamond_eye_shipping_rows} Diamond Eye zero-shipping row(s) "
+                "from CSV batches.",
                 "info"
             )
 
