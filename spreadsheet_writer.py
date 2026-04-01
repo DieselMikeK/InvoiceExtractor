@@ -74,6 +74,17 @@ TYPE_CATEGORY = 'Category Details'
 TYPE_ITEM = 'Item Details'
 
 
+def _normalize_vendor_key(name):
+    s = str(name or '').lower().strip()
+    s = s.replace('&', 'and')
+    return re.sub(r'[^a-z0-9]+', '', s)
+
+
+def _is_diamond_eye_vendor_name(name):
+    key = _normalize_vendor_key(name)
+    return bool(key and 'diamondeyemanufacturing' in key)
+
+
 def _is_csv(filepath):
     return str(filepath).lower().endswith('.csv')
 
@@ -391,6 +402,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     memo = invoice_data.get('po_number', '')
     customer = invoice_data.get('customer', '')
     total_amount = invoice_data.get('total', '')
+    diamond_eye_category_mode = _is_diamond_eye_vendor_name(vendor)
     shared_invoice_fields = {
         'bill_no': bill_no,
         'vendor': vendor,
@@ -521,6 +533,11 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         item_num = str(item.get('item_number', '')).lower().strip()
         desc = str(item.get('description', '')).lower()
         return item_num in ('e.r.e.', 'ere') or 'environmental regulation expense' in desc
+    def _line_amount_for_item(item):
+        amount = str(item.get('amount', '')).strip()
+        if amount:
+            return amount
+        return str(item.get('unit_price', '')).strip()
     def _normalize_shipping_label(text):
         s = str(text or '').lower()
         if 'drop ship' in s or 'dropship' in s:
@@ -531,6 +548,8 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             return 'Shipping'
         return 'Shipping'
     def _row_category_for_item(item, is_freight):
+        if diamond_eye_category_mode:
+            return PURCHASES_CATEGORY
         override = _item_export_override(item, 'qb_category_override')
         if override:
             return override
@@ -541,6 +560,8 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             return PURCHASES_CATEGORY
         return FREIGHT_CATEGORY
     def _row_type_for_item(item, is_freight):
+        if diamond_eye_category_mode:
+            return TYPE_CATEGORY
         override = _item_export_override(item, 'qb_type_override')
         if override:
             return override
@@ -554,6 +575,8 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             return desc
         return code
     def _product_service_for_item(item, is_discount, is_core, is_ere, is_freight):
+        if diamond_eye_category_mode:
+            return ''
         override = _item_export_override(item, 'qb_product_service_override')
         if override:
             return override
@@ -605,10 +628,10 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         'category': first_category if first_item else '',
         'product_service': first_product_service,
         'sku': first_sku,
-        'qty': _normalize_qty_value(first_item.get('quantity', '')),
-        'rate': first_item.get('unit_price', ''),
+        'qty': '' if diamond_eye_category_mode else _normalize_qty_value(first_item.get('quantity', '')),
+        'rate': '' if diamond_eye_category_mode else first_item.get('unit_price', ''),
         'description': _description_for_item(first_item, first_is_discount, first_is_core, first_is_freight),
-        'amount': '',
+        'amount': _line_amount_for_item(first_item) if (first_item and diamond_eye_category_mode) else '',
         'billable': '',
         'customer_project': customer,
         'tax_rate': '',
@@ -647,10 +670,10 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'category': category,
             'product_service': _product_service_for_item(item, is_discount, is_core, is_ere, is_freight),
             'sku': _sku_for_item(item),
-            'qty': _normalize_qty_value(item.get('quantity', '')),
-            'rate': item.get('unit_price', ''),
+            'qty': '' if diamond_eye_category_mode else _normalize_qty_value(item.get('quantity', '')),
+            'rate': '' if diamond_eye_category_mode else item.get('unit_price', ''),
             'description': _description_for_item(item, is_discount, is_core, is_freight),
-            'amount': '',
+            'amount': _line_amount_for_item(item) if diamond_eye_category_mode else '',
             'billable': '',
             'customer_project': '',
             'tax_rate': '',
@@ -678,9 +701,11 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
     shipping_qty = ''
     if shipping_label == 'Drop Ship':
         shipping_qty = _normalize_qty_value(invoice_data.get('shipping_quantity', ''))
-    shipping_category = PURCHASES_CATEGORY if shipping_label == 'Drop Ship' else FREIGHT_CATEGORY
+    if diamond_eye_category_mode:
+        shipping_qty = ''
+    shipping_category = PURCHASES_CATEGORY if (diamond_eye_category_mode or shipping_label == 'Drop Ship') else FREIGHT_CATEGORY
     shipping_type = TYPE_CATEGORY
-    shipping_product_service = (
+    shipping_product_service = '' if diamond_eye_category_mode else (
         'Drop Ship' if shipping_label == 'Drop Ship' else shipping_label
     )
 
@@ -703,9 +728,9 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             'product_service': shipping_product_service,
             'sku': '',
             'qty': shipping_qty,
-            'rate': shipping_rate,
+            'rate': '' if diamond_eye_category_mode else shipping_rate,
             'description': shipping_desc,
-            'amount': '',
+            'amount': shipping_rate if diamond_eye_category_mode else '',
             'billable': '',
             'customer_project': '',
             'tax_rate': '',
