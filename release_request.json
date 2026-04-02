@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Export Diamond Eye invoice rows as Category Details with Category/Account Purchases and blank Product/Service for QuickBooks import.",
-    "requested_at":  "2026-04-01T20:58:59.5558967Z"
+    "notes":  "Fix S\u0026B shipping extraction when Shipping Cost labels include nested parentheses and keep the Hawaii Total Tax line from breaking required fields.",
+    "requested_at":  "2026-04-02T21:21:20.2499851Z"
 }
