@@ -1907,6 +1907,19 @@ def _is_sb_vendor_name(name):
     return False
 
 
+def _extract_sb_shipping_cost(text):
+    """Extract S&B shipping from the footer line, allowing nested carrier labels."""
+    if not text:
+        return ''
+    match = re.search(
+        r'(?im)^\s*Shipping\s+Cost\b[^\n]*?\$?([\d,]+\.\d{2})\s*$',
+        text,
+    )
+    if not match:
+        return ''
+    return _clean_price(match.group(1))
+
+
 def _is_ppe_vendor_name(name):
     """Return True if vendor name looks like Pacific Performance Engineering."""
     key = _normalize_vendor_key(name or '')
@@ -5570,6 +5583,12 @@ def parse_invoice_text(text, filepath=None):
     # --- Shipping Cost ---
     # Supports: "Shipping Cost (FedEx...) 12.00", "Drop Ship $5.00",
     #           "Freight $0.00", "FREIGHT OUT $67.00", "FreightEB"
+    if _is_sb_vendor_name(data.get('vendor', '')):
+        sb_shipping_cost = _extract_sb_shipping_cost(text)
+        if sb_shipping_cost:
+            data['shipping_cost'] = sb_shipping_cost
+            if not data.get('shipping_description'):
+                data['shipping_description'] = 'Shipping'
     _shipping_patterns = [
         (r'Shipping\s+Cost\s*\([^)]+\)\s*\$?([\d,]+\.?\d*)', 'Shipping'),   # S&B
         (r'Drop\s+Ship\s+\$?([\d,]+\.?\d*)', 'Drop Ship'),                    # FL, PPE
@@ -5581,13 +5600,14 @@ def parse_invoice_text(text, filepath=None):
             (r'(?im)^Drop\s+Ship\s+\d+\.?\d*\s+\d+\.?\d*\s+([\d,]+\.?\d{2})(?:\s+[\d,]+\.?\d{2})?\s*$', 'Drop Ship'),  # PPE full row
             (r'(?im)^Drop\s+Ship\s+\d+\.?\d*\s+([\d,]+\.?\d{2})\s*$', 'Drop Ship'),  # PPE abbreviated row
         ]
-    for _pat, _desc in _shipping_patterns:
-        _m = re.search(_pat, text, re.IGNORECASE | re.MULTILINE)
-        if _m:
-            data['shipping_cost'] = _m.group(1).strip()
-            if not data.get('shipping_description'):
-                data['shipping_description'] = _desc
-            break
+    if not data.get('shipping_cost'):
+        for _pat, _desc in _shipping_patterns:
+            _m = re.search(_pat, text, re.IGNORECASE | re.MULTILINE)
+            if _m:
+                data['shipping_cost'] = _m.group(1).strip()
+                if not data.get('shipping_description'):
+                    data['shipping_description'] = _desc
+                break
     if not data.get('shipping_cost'):
         data['shipping_cost'] = ''
     if _is_ppe_vendor_name(data.get('vendor', '')):
