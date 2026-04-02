@@ -1,24 +1,24 @@
 {
-  "version": "1.2.20",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.20/InvoiceExtractor.exe",
-  "sha256": "9074637652a8210f6ae2849ee85973793317099846533355fd940158b5749324",
-  "notes": "Export Diamond Eye invoice rows as Category Details with Category/Account Purchases and blank Product/Service for QuickBooks import.",
-  "published_at": "04/01/2026 21:01:14",
+  "version": "1.2.21",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.21/InvoiceExtractor.exe",
+  "sha256": "633a1a57bd22b5fda618eaa836867c5f66e1bf35fc457f5fe9fc2961555c6d75",
+  "notes": "Fix S&B shipping extraction when Shipping Cost labels include nested parentheses and keep the Hawaii Total Tax line from breaking required fields.",
+  "published_at": "04/02/2026 21:23:05",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.20/InvoiceExtractor.exe",
-      "sha256": "9074637652a8210f6ae2849ee85973793317099846533355fd940158b5749324"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.21/InvoiceExtractor.exe",
+      "sha256": "633a1a57bd22b5fda618eaa836867c5f66e1bf35fc457f5fe9fc2961555c6d75"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.20/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.21/app-vendors.csv",
       "sha256": "2e83c7554e948b7db8914b1e5adc8db3022bcc10ff8e7a8369257c50598fede9"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.20/update-InvoiceExtractorUpdater.exe",
-      "sha256": "22a8dd894a7b15ded368abbcda4553cc9fd163ba0cbbbd0f08cae2fec809c2b1"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.21/update-InvoiceExtractorUpdater.exe",
+      "sha256": "b75a2b1116ae6f1fc144876bb5995e15af33c51dedf0bccfc460bd0c959213c7"
     }
   ]
 }
