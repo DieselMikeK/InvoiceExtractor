@@ -148,6 +148,42 @@ class GmailClientDownloadTests(unittest.TestCase):
         self.assertEqual(downloaded[0]['sender_email'], 'invoicing@kcturbos.com')
         self.assertIn('KC Turbos Invoicing', downloaded[0]['sender_header'])
 
+    def test_message_time_filter_skips_messages_outside_requested_window(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = GmailClient(tmpdir, data_dir=tmpdir, invoices_dir=tmpdir)
+            client.processed_label_id = 'label-1'
+
+            labeled = []
+
+            client.fetch_all_message_ids = lambda query=None: [{'id': 'msg-1'}]
+            client.get_message_details = lambda msg_id: {
+                'internalDate': '1712520000000',
+                'payload': {
+                    'headers': [
+                        {'name': 'Subject', 'value': 'Test'},
+                        {'name': 'From', 'value': 'KC Turbos <invoicing@kcturbos.com>'},
+                    ],
+                    'parts': [
+                        {'filename': 'a.pdf', 'body': {'attachmentId': 'att-1'}},
+                    ],
+                }
+            }
+            client.find_attachments_in_parts = lambda parts, msg_id: [
+                {'filename': 'a.pdf', 'attachment_id': 'att-1', 'msg_id': msg_id},
+            ]
+            client.download_attachment = lambda msg_id, attachment_id, filename: filename
+            client._add_label_to_message = lambda msg_id, label_id: labeled.append((msg_id, label_id))
+
+            downloaded, total_emails, new_emails = client.fetch_and_download_new_attachments(
+                query='after:1712510000 before:1712515000',
+                message_time_filter={'start_ts': 1712510000, 'end_ts': 1712515000},
+            )
+
+        self.assertEqual(downloaded, [])
+        self.assertEqual(total_emails, 1)
+        self.assertEqual(new_emails, 1)
+        self.assertEqual(labeled, [])
+
 
 if __name__ == '__main__':
     unittest.main()

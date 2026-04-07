@@ -169,6 +169,38 @@ def _extract_forwarded_sender(payload, snippet=''):
     return '', ''
 
 
+def _message_internal_timestamp(message):
+    """Return Gmail's stored message timestamp as whole seconds."""
+    raw = str((message or {}).get('internalDate', '') or '').strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if value > 10_000_000_000:
+        value //= 1000
+    return value
+
+
+def _message_matches_time_filter(message, message_time_filter):
+    """Check whether a Gmail message falls inside the requested timestamp window."""
+    if not message_time_filter:
+        return True
+
+    timestamp = _message_internal_timestamp(message)
+    if timestamp is None:
+        return False
+
+    try:
+        start_ts = int(message_time_filter.get('start_ts', 0))
+        end_ts = int(message_time_filter.get('end_ts', 0))
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+    return start_ts <= timestamp < end_ts
+
+
 class GmailClient:
     def __init__(
         self,
@@ -429,7 +461,7 @@ class GmailClient:
 
         return attachments
 
-    def fetch_and_download_new_attachments(self, query=None):
+    def fetch_and_download_new_attachments(self, query=None, message_time_filter=None):
         """Main method: fetch all emails, download new attachments.
 
         Returns:
@@ -471,6 +503,11 @@ class GmailClient:
 
             try:
                 msg = self.get_message_details(msg_id)
+                if not _message_matches_time_filter(msg, message_time_filter):
+                    self.status_callback(
+                        "  Skipped: Gmail timestamp is outside the requested time window."
+                    )
+                    continue
                 payload = msg.get('payload', {})
 
                 # Get subject for logging

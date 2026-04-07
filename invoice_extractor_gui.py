@@ -377,6 +377,12 @@ def _parse_time_input(value):
 
 def _build_today_time_query(boundary_value, direction, reference_dt=None):
     """Build a Gmail query for today's email before or after a specific local time."""
+    time_filter = _build_today_time_filter(boundary_value, direction, reference_dt)
+    return f"after:{time_filter['start_ts']} before:{time_filter['end_ts']}"
+
+
+def _build_today_time_filter(boundary_value, direction, reference_dt=None):
+    """Build an absolute Gmail timestamp window for today's before/after filter."""
     boundary_time = _parse_time_input(boundary_value)
     if boundary_time is None:
         raise ValueError("Invalid time. Use HH:MM or H:MM AM/PM.")
@@ -395,8 +401,14 @@ def _build_today_time_query(boundary_value, direction, reference_dt=None):
     boundary_dt = datetime.combine(today, boundary_time, tzinfo=tzinfo)
 
     if mode == 'before':
-        return f"after:{int(day_start.timestamp())} before:{int(boundary_dt.timestamp())}"
-    return f"after:{int(boundary_dt.timestamp())} before:{int(day_end.timestamp())}"
+        return {
+            'start_ts': int(day_start.timestamp()),
+            'end_ts': int(boundary_dt.timestamp()),
+        }
+    return {
+        'start_ts': int(boundary_dt.timestamp()),
+        'end_ts': int(day_end.timestamp()),
+    }
 
 
 def _format_time_value(value):
@@ -1446,44 +1458,49 @@ class InvoiceExtractorGUI:
 
     def _build_gmail_query(self):
         """Build Gmail search query based on date filter options."""
+        message_time_filter = None
         if self.today_filter_var.get():
             today = datetime.now().date()
             after = today.strftime("%Y/%m/%d")
             before = (today + timedelta(days=1)).strftime("%Y/%m/%d")
-            return f"after:{after} before:{before}", "today"
+            return f"after:{after} before:{before}", "today", message_time_filter
 
         if self.today_time_filter_var.get():
             time_raw = self._get_today_time_filter_value()
             if not time_raw:
                 self.log("Today time filter is enabled but no time was provided.", "error")
-                return None, None
+                return None, None, None
             try:
+                message_time_filter = _build_today_time_filter(
+                    time_raw,
+                    self.today_time_mode_var.get(),
+                )
                 query = _build_today_time_query(
                     time_raw,
                     self.today_time_mode_var.get(),
                 )
             except ValueError as exc:
                 self.log(str(exc), "error")
-                return None, None
-            return query, "today_time"
+                return None, None, None
+            return query, "today_time", message_time_filter
 
         if self.date_filter_var.get():
             from_raw = self.date_from_var.get().strip()
             to_raw = self.date_to_var.get().strip()
             if not from_raw and not to_raw:
                 self.log("Date filter is enabled but no dates were provided.", "error")
-                return None, None
+                return None, None, None
             from_date = self._parse_date_input(from_raw)
             to_date = self._parse_date_input(to_raw)
             if from_raw and not from_date:
                 self.log("Invalid From date. Use YYYY/MM/DD.", "error")
-                return None, None
+                return None, None, None
             if to_raw and not to_date:
                 self.log("Invalid To date. Use YYYY/MM/DD.", "error")
-                return None, None
+                return None, None, None
             if from_date and to_date and from_date > to_date:
                 self.log("From date must be on or before To date.", "error")
-                return None, None
+                return None, None, None
 
             parts = []
             if from_date:
@@ -1491,9 +1508,9 @@ class InvoiceExtractorGUI:
             if to_date:
                 inclusive_before = to_date + timedelta(days=1)
                 parts.append(f"before:{inclusive_before.strftime('%Y/%m/%d')}")
-            return " ".join(parts), "range"
+            return " ".join(parts), "range", message_time_filter
 
-        return f"-label:{PROCESSED_LABEL_NAME}", "label"
+        return f"-label:{PROCESSED_LABEL_NAME}", "label", message_time_filter
 
     def _update_date_filter_state(self):
         enabled = self.date_filter_var.get()
@@ -2032,7 +2049,7 @@ class InvoiceExtractorGUI:
                 return
 
             self.set_progress(10, "Downloading attachments...")
-            query, mode = self._build_gmail_query()
+            query, mode, message_time_filter = self._build_gmail_query()
             if query is None:
                 self.finish("Failed - invalid date filter.")
                 return
@@ -2050,7 +2067,10 @@ class InvoiceExtractorGUI:
                 self.log("Downloading emails in date range (label filter ignored).", "warning")
 
             downloaded_attachments, total_emails, new_emails = (
-                client.fetch_and_download_new_attachments(query=query)
+                client.fetch_and_download_new_attachments(
+                    query=query,
+                    message_time_filter=message_time_filter,
+                )
             )
 
             if not self.is_running:
