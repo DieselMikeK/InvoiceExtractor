@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Detect vendor senders inside forwarded Gmail emails, only tag processed emails after full download, and add today before/after time filters.",
-    "requested_at":  "2026-04-07T22:16:25.9199363Z"
+    "notes":  "Add a compact today before/after time picker and simplify the status panel to show only missing requirements.",
+    "requested_at":  "2026-04-07T22:32:34.6288035Z"
 }
