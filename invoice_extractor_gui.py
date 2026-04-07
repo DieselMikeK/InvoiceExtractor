@@ -18,7 +18,7 @@ import time
 import ctypes
 import shutil
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 try:
@@ -358,6 +358,45 @@ def _bring_existing_window_to_front(window_title):
     except Exception:
         pass
     return False
+
+
+def _parse_time_input(value):
+    """Parse a user-entered time-of-day value."""
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+
+    normalized = re.sub(r'\s+', ' ', raw.upper())
+    for fmt in ("%H:%M", "%H%M", "%I:%M %p", "%I%p", "%I %p"):
+        try:
+            return datetime.strptime(normalized, fmt).time()
+        except ValueError:
+            continue
+    return None
+
+
+def _build_today_time_query(boundary_value, direction, reference_dt=None):
+    """Build a Gmail query for today's email before or after a specific local time."""
+    boundary_time = _parse_time_input(boundary_value)
+    if boundary_time is None:
+        raise ValueError("Invalid time. Use HH:MM or H:MM AM/PM.")
+
+    mode = str(direction or '').strip().lower()
+    if mode not in {'before', 'after'}:
+        raise ValueError("Time filter must be set to Before or After.")
+
+    now = reference_dt or datetime.now().astimezone()
+    if now.tzinfo is None:
+        now = now.astimezone()
+    tzinfo = now.tzinfo
+    today = now.date()
+    day_start = datetime.combine(today, dt_time.min, tzinfo=tzinfo)
+    day_end = day_start + timedelta(days=1)
+    boundary_dt = datetime.combine(today, boundary_time, tzinfo=tzinfo)
+
+    if mode == 'before':
+        return f"after:{int(day_start.timestamp())} before:{int(boundary_dt.timestamp())}"
+    return f"after:{int(boundary_dt.timestamp())} before:{int(day_end.timestamp())}"
 
 
 def _ensure_single_instance(window_title):
@@ -1281,6 +1320,21 @@ class InvoiceExtractorGUI:
             before = (today + timedelta(days=1)).strftime("%Y/%m/%d")
             return f"after:{after} before:{before}", "today"
 
+        if self.today_time_filter_var.get():
+            time_raw = self.today_time_value_var.get().strip()
+            if not time_raw:
+                self.log("Today time filter is enabled but no time was provided.", "error")
+                return None, None
+            try:
+                query = _build_today_time_query(
+                    time_raw,
+                    self.today_time_mode_var.get(),
+                )
+            except ValueError as exc:
+                self.log(str(exc), "error")
+                return None, None
+            return query, "today_time"
+
         if self.date_filter_var.get():
             from_raw = self.date_from_var.get().strip()
             to_raw = self.date_to_var.get().strip()
@@ -1316,15 +1370,30 @@ class InvoiceExtractorGUI:
             self.date_from_entry.config(state=state)
         if hasattr(self, 'date_to_entry'):
             self.date_to_entry.config(state=state)
+        time_enabled = self.today_time_filter_var.get()
+        time_state = tk.NORMAL if time_enabled else tk.DISABLED
+        combo_state = 'readonly' if time_enabled else 'disabled'
+        if hasattr(self, 'today_time_mode_combo'):
+            self.today_time_mode_combo.config(state=combo_state)
+        if hasattr(self, 'today_time_entry'):
+            self.today_time_entry.config(state=time_state)
 
     def _on_date_filter_toggle(self):
         if self.date_filter_var.get():
             self.today_filter_var.set(False)
+            self.today_time_filter_var.set(False)
         self._update_date_filter_state()
 
     def _on_today_filter_toggle(self):
         if self.today_filter_var.get():
             self.date_filter_var.set(False)
+            self.today_time_filter_var.set(False)
+        self._update_date_filter_state()
+
+    def _on_today_time_filter_toggle(self):
+        if self.today_time_filter_var.get():
+            self.date_filter_var.set(False)
+            self.today_filter_var.set(False)
         self._update_date_filter_state()
 
     def build_ui(self):
@@ -1479,6 +1548,9 @@ class InvoiceExtractorGUI:
 
         self.date_filter_var = tk.BooleanVar(value=False)
         self.today_filter_var = tk.BooleanVar(value=False)
+        self.today_time_filter_var = tk.BooleanVar(value=False)
+        self.today_time_mode_var = tk.StringVar(value="Before")
+        self.today_time_value_var = tk.StringVar()
         self.date_from_var = tk.StringVar()
         self.date_to_var = tk.StringVar()
 
@@ -1508,19 +1580,51 @@ class InvoiceExtractorGUI:
             )
         )
 
-        self.today_filter_check = ttk.Checkbutton(
+        self.today_time_filter_check = ttk.Checkbutton(
             filter_frame,
             text="All from Today",
+            variable=self.today_time_filter_var,
+            command=self._on_today_time_filter_toggle
+        )
+        self.today_time_filter_check.grid(row=1, column=0, sticky='w', pady=(4, 0))
+
+        self.today_time_mode_combo = ttk.Combobox(
+            filter_frame,
+            textvariable=self.today_time_mode_var,
+            values=("Before", "After"),
+            width=8,
+            state='readonly',
+        )
+        self.today_time_mode_combo.grid(row=1, column=1, padx=(10, 2), pady=(4, 0))
+
+        ttk.Label(filter_frame, text="Time").grid(row=1, column=2, padx=(0, 2), pady=(4, 0))
+        self.today_time_entry = ttk.Entry(
+            filter_frame,
+            textvariable=self.today_time_value_var,
+            width=12,
+        )
+        self.today_time_entry.grid(row=1, column=3, padx=(0, 10), pady=(4, 0))
+
+        ttk.Label(filter_frame, text="HH:MM or 1:30 PM").grid(
+            row=1,
+            column=4,
+            sticky='w',
+            pady=(4, 0),
+        )
+
+        self.today_filter_check = ttk.Checkbutton(
+            filter_frame,
+            text="All from Today (Full Day)",
             variable=self.today_filter_var,
             command=self._on_today_filter_toggle
         )
-        self.today_filter_check.grid(row=1, column=0, sticky='w', pady=(4, 0))
+        self.today_filter_check.grid(row=2, column=0, sticky='w', pady=(4, 0))
 
         ttk.Label(
             filter_frame,
             text="Filtering by date may download already downloaded invoices.",
             foreground='orange'
-        ).grid(row=2, column=0, columnspan=5, sticky='w', pady=(4, 0))
+        ).grid(row=3, column=0, columnspan=5, sticky='w', pady=(4, 0))
 
         # Buttons frame
         btn_frame = ttk.Frame(main_frame)
@@ -1777,7 +1881,8 @@ class InvoiceExtractorGUI:
                 status_callback=self.log,
                 data_dir=self.required_dir,
                 invoices_dir=self.invoices_dir,
-                expected_email=AUTHORIZED_GMAIL_ACCOUNT
+                expected_email=AUTHORIZED_GMAIL_ACCOUNT,
+                should_stop=lambda: not self.is_running,
             )
             client.authenticate()
             drive_client = DriveHistoryClient(client.creds, status_callback=self.log)
@@ -1795,6 +1900,12 @@ class InvoiceExtractorGUI:
                 self.log(f"Using Gmail label filter (skipping '{PROCESSED_LABEL_NAME}' emails).", "info")
             elif mode == "today":
                 self.log("Downloading all emails from today (label filter ignored).", "warning")
+            elif mode == "today_time":
+                self.log(
+                    "Downloading emails from today using the before/after time filter "
+                    "(label filter ignored).",
+                    "warning",
+                )
             elif mode == "range":
                 self.log("Downloading emails in date range (label filter ignored).", "warning")
 

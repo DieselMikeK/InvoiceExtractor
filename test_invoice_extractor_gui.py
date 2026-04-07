@@ -1,10 +1,13 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
 from invoice_extractor_gui import (
+    _build_today_time_query,
     _is_diamond_eye_zero_shipping_batch_row,
     _load_sender_sidecar,
+    _parse_time_input,
     _lookup_sender_metadata_entry,
     _save_sender_sidecar,
 )
@@ -82,6 +85,36 @@ class SenderMetadataLookupTests(unittest.TestCase):
 
         self.assertEqual(loaded.get('sender_email'), 'invoicing@kcturbos.com')
         self.assertEqual(loaded.get('message_id'), 'abc123')
+
+
+class GmailTodayTimeQueryTests(unittest.TestCase):
+    def test_parse_time_input_accepts_24_hour_and_ampm(self):
+        self.assertEqual(_parse_time_input('14:35').strftime('%H:%M'), '14:35')
+        self.assertEqual(_parse_time_input('2:35 PM').strftime('%H:%M'), '14:35')
+
+    def test_build_today_time_query_before_uses_start_of_day_to_boundary(self):
+        reference = datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)
+
+        query = _build_today_time_query('10:30', 'Before', reference)
+
+        expected_start = int(datetime(2026, 4, 7, 0, 0, tzinfo=timezone.utc).timestamp())
+        expected_boundary = int(datetime(2026, 4, 7, 10, 30, tzinfo=timezone.utc).timestamp())
+        self.assertEqual(query, f"after:{expected_start} before:{expected_boundary}")
+
+    def test_build_today_time_query_after_uses_boundary_to_end_of_day(self):
+        reference = datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)
+
+        query = _build_today_time_query('2:30 PM', 'After', reference)
+
+        expected_boundary = int(datetime(2026, 4, 7, 14, 30, tzinfo=timezone.utc).timestamp())
+        expected_end = int(datetime(2026, 4, 8, 0, 0, tzinfo=timezone.utc).timestamp())
+        self.assertEqual(query, f"after:{expected_boundary} before:{expected_end}")
+
+    def test_build_today_time_query_rejects_invalid_time(self):
+        reference = datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)
+
+        with self.assertRaises(ValueError):
+            _build_today_time_query('bad-time', 'Before', reference)
 
 
 if __name__ == '__main__':

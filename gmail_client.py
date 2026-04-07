@@ -4,7 +4,9 @@ import io
 import csv
 import base64
 import pickle
+import re
 import time
+from html import unescape
 from email.utils import parseaddr
 from datetime import datetime
 from google.auth.exceptions import RefreshError
@@ -62,6 +64,111 @@ def _extract_sender_email(from_header):
     return parsed
 
 
+def _extract_email_addresses(text):
+    if not text:
+        return []
+    return re.findall(
+        r'[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}',
+        str(text),
+        re.IGNORECASE,
+    )
+
+
+def _decode_gmail_body_data(data):
+    if not data:
+        return ''
+    raw = str(data).strip()
+    if not raw:
+        return ''
+    padding = (-len(raw)) % 4
+    if padding:
+        raw += '=' * padding
+    try:
+        return base64.urlsafe_b64decode(raw.encode('utf-8')).decode('utf-8', errors='replace')
+    except Exception:
+        return ''
+
+
+def _html_to_text(value):
+    text = str(value or '')
+    if not text:
+        return ''
+    text = re.sub(r'(?i)<br\s*/?>', '\n', text)
+    text = re.sub(r'(?i)</(?:p|div|li|tr|table|section|h[1-6])>', '\n', text)
+    text = re.sub(r'(?s)<[^>]+>', ' ', text)
+    text = unescape(text)
+    text = re.sub(r'\r\n?', '\n', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def _collect_message_text_parts(payload):
+    if not isinstance(payload, dict):
+        return []
+
+    parts = []
+    mime_type = str(payload.get('mimeType', '') or '').lower()
+    body = payload.get('body', {}) or {}
+    data = body.get('data')
+
+    if data and mime_type in ('text/plain', 'text/html'):
+        decoded = _decode_gmail_body_data(data)
+        if decoded:
+            parts.append(decoded if mime_type == 'text/plain' else _html_to_text(decoded))
+
+    for part in payload.get('parts', []) or []:
+        parts.extend(_collect_message_text_parts(part))
+
+    return parts
+
+
+def _extract_forwarded_sender(payload, snippet=''):
+    """Extract the original sender from a forwarded Gmail message body when present."""
+    text_chunks = _collect_message_text_parts(payload)
+    if snippet:
+        text_chunks.append(unescape(str(snippet)))
+    combined = '\n'.join(chunk for chunk in text_chunks if chunk).strip()
+    if not combined:
+        return '', ''
+
+    lines = [re.sub(r'^\s*>+\s*', '', line).strip() for line in combined.splitlines()]
+    marker_indexes = [
+        idx for idx, line in enumerate(lines)
+        if re.search(r'forwarded message|begin forwarded message', line, re.IGNORECASE)
+    ]
+    if not marker_indexes:
+        return '', ''
+
+    for start_idx in marker_indexes:
+        for idx in range(start_idx + 1, min(start_idx + 20, len(lines))):
+            line = lines[idx]
+            match = re.match(r'^From:\s*(.+)$', line, re.IGNORECASE)
+            if not match:
+                continue
+
+            header_parts = [match.group(1).strip()]
+            for next_idx in range(idx + 1, min(idx + 4, len(lines))):
+                next_line = lines[next_idx].strip()
+                if not next_line:
+                    break
+                if re.match(r'^(?:to|cc|bcc|subject|date|reply-to)\s*:', next_line, re.IGNORECASE):
+                    break
+                if re.match(r'^[A-Za-z][A-Za-z\-]+\s*:', next_line):
+                    break
+                header_parts.append(next_line)
+
+            header_value = re.sub(r'\s+', ' ', ' '.join(header_parts)).strip()
+            emails = _extract_email_addresses(header_value)
+            if emails:
+                return emails[0].lower(), header_value
+            parsed = _extract_sender_email(header_value)
+            if parsed:
+                return parsed, header_value
+
+    return '', ''
+
+
 class GmailClient:
     def __init__(
         self,
@@ -69,7 +176,8 @@ class GmailClient:
         status_callback=None,
         data_dir=None,
         invoices_dir=None,
-        expected_email=None
+        expected_email=None,
+        should_stop=None,
     ):
         self.base_dir = base_dir
         self.data_dir = data_dir or base_dir
@@ -78,6 +186,7 @@ class GmailClient:
         self.token_file = os.path.join(self.data_dir, 'token.pickle')
         self.invoices_dir = invoices_dir or os.path.join(self.data_dir, 'invoices')
         self.expected_email = str(expected_email or '').strip().lower()
+        self.should_stop = should_stop or (lambda: False)
         self.service = None
 
         os.makedirs(self.invoices_dir, exist_ok=True)
@@ -351,6 +460,12 @@ class GmailClient:
         downloaded_attachments = []
 
         for i, msg_data in enumerate(new_messages, 1):
+            if self.should_stop():
+                self.status_callback(
+                    "Stop requested during Gmail download; leaving remaining emails untagged.",
+                    "warning",
+                )
+                break
             msg_id = msg_data['id']
             self.status_callback(f"Checking email {i}/{new_count}...")
 
@@ -366,6 +481,17 @@ class GmailClient:
                 subject = headers.get('Subject', '(no subject)')
                 from_header = headers.get('From', '')
                 sender_email = _extract_sender_email(from_header)
+                sender_header = from_header
+                forwarded_sender_email, forwarded_sender_header = _extract_forwarded_sender(
+                    payload,
+                    msg.get('snippet', ''),
+                )
+                if forwarded_sender_email:
+                    sender_email = forwarded_sender_email
+                    sender_header = forwarded_sender_header or sender_header
+                    self.status_callback(
+                        f"  Forwarded sender detected: {sender_email}"
+                    )
 
                 # Find attachments
                 parts = payload.get('parts', [])
@@ -385,7 +511,15 @@ class GmailClient:
                     self.status_callback(
                         f"  Email: \"{subject}\" - {len(attachments)} attachment(s)"
                     )
+                    download_completed = True
                     for att in attachments:
+                        if self.should_stop():
+                            self.status_callback(
+                                "  Stop requested before email finished downloading; this email will remain untagged.",
+                                "warning",
+                            )
+                            download_completed = False
+                            break
                         saved_name = self.download_attachment(
                             msg_id, att['attachment_id'], att['filename']
                         )
@@ -395,28 +529,24 @@ class GmailClient:
                         downloaded_attachments.append({
                             'filename': saved_name,
                             'sender_email': sender_email,
-                            'sender_header': from_header,
+                            'sender_header': sender_header,
                             'subject': subject,
                             'message_id': msg_id,
                         })
-
-                # Mark email as processed via Gmail label
-                try:
-                    self._add_label_to_message(msg_id, self.processed_label_id)
-                except Exception as label_err:
-                    self.status_callback(
-                        f"    Warning: couldn't add label: {label_err}", "warning"
-                    )
+                    if download_completed:
+                        try:
+                            self._add_label_to_message(msg_id, self.processed_label_id)
+                        except Exception as label_err:
+                            self.status_callback(
+                                f"    Warning: couldn't add label: {label_err}", "warning"
+                            )
+                    else:
+                        break
 
             except Exception as e:
                 self.status_callback(
                     f"  Error processing email {msg_id}: {e}", "error"
                 )
-                # Best effort label to avoid retrying broken emails forever
-                try:
-                    self._add_label_to_message(msg_id, self.processed_label_id)
-                except Exception:
-                    pass  # Best effort
 
         self.status_callback(
             f"Download complete: {len(downloaded_attachments)} attachments from "
