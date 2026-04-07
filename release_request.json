@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix sender-based vendor detection for KC/Serra, improve S\u0026B template parsing, and blank DPP DISCOUNT SKUs on export.",
-    "requested_at":  "2026-04-07T21:45:09.9867586Z"
+    "notes":  "Detect vendor senders inside forwarded Gmail emails, only tag processed emails after full download, and add today before/after time filters.",
+    "requested_at":  "2026-04-07T22:16:25.9199363Z"
 }
