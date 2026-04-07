@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix S\u0026B shipping extraction when Shipping Cost labels include nested parentheses and keep the Hawaii Total Tax line from breaking required fields.",
-    "requested_at":  "2026-04-02T21:21:20.2499851Z"
+    "notes":  "Fix sender-based vendor detection for KC/Serra, improve S\u0026B template parsing, and blank DPP DISCOUNT SKUs on export.",
+    "requested_at":  "2026-04-07T21:43:45.1276396Z"
 }
