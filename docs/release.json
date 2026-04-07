@@ -1,24 +1,24 @@
 {
-  "version": "1.2.21",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.21/InvoiceExtractor.exe",
-  "sha256": "633a1a57bd22b5fda618eaa836867c5f66e1bf35fc457f5fe9fc2961555c6d75",
-  "notes": "Fix S&B shipping extraction when Shipping Cost labels include nested parentheses and keep the Hawaii Total Tax line from breaking required fields.",
-  "published_at": "04/02/2026 21:23:05",
+  "version": "1.2.22",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.22/InvoiceExtractor.exe",
+  "sha256": "c49c9b3d092f1604178939d79a01e2c0cffc6c24ea4a6b9226ebd3f1037d8dcd",
+  "notes": "Fix sender-based vendor detection for KC/Serra, improve S&B template parsing, and blank DPP DISCOUNT SKUs on export.",
+  "published_at": "04/07/2026 21:46:59",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.21/InvoiceExtractor.exe",
-      "sha256": "633a1a57bd22b5fda618eaa836867c5f66e1bf35fc457f5fe9fc2961555c6d75"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.22/InvoiceExtractor.exe",
+      "sha256": "c49c9b3d092f1604178939d79a01e2c0cffc6c24ea4a6b9226ebd3f1037d8dcd"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.21/app-vendors.csv",
-      "sha256": "2e83c7554e948b7db8914b1e5adc8db3022bcc10ff8e7a8369257c50598fede9"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.22/app-vendors.csv",
+      "sha256": "599a03f38379aae31a6181f13a125982c3356bb6e5c67bf712c606a0c5faf9f2"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.21/update-InvoiceExtractorUpdater.exe",
-      "sha256": "b75a2b1116ae6f1fc144876bb5995e15af33c51dedf0bccfc460bd0c959213c7"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.22/update-InvoiceExtractorUpdater.exe",
+      "sha256": "82b269a7b8f6fba0ae1fad98c7ebb1dd82c94be95c5c8a189701bac6513cac13"
     }
   ]
 }
