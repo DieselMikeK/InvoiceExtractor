@@ -588,11 +588,18 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
                 return 'Drop Ship'
             return shipping_label
         return 'Inventory Item (Sellable Item)'
+    def _should_blank_export_sku(value):
+        text = str(value or '').strip()
+        if not text:
+            return False
+        normalized = re.sub(r'[^a-z0-9]+', '', text.lower())
+        return 'dppdiscount' in normalized
     def _sku_for_item(item):
         override = _item_export_override(item, 'qb_sku_override')
         if override:
-            return override
-        return str(item.get('item_number', '')).strip()
+            return '' if _should_blank_export_sku(override) else override
+        item_number = str(item.get('item_number', '')).strip()
+        return '' if _should_blank_export_sku(item_number) else item_number
     def _description_for_item(item, is_discount, is_core, is_freight):
         if is_core:
             return _core_description(item)

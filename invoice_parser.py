@@ -1911,13 +1911,49 @@ def _extract_sb_shipping_cost(text):
     """Extract S&B shipping from the footer line, allowing nested carrier labels."""
     if not text:
         return ''
-    match = re.search(
+    patterns = [
         r'(?im)^\s*Shipping\s+Cost\b[^\n]*?\$?([\d,]+\.\d{2})\s*$',
+        r'(?im)^\s*Shipping\s+\$?([\d,]+\.\d{2})\s*$',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return _clean_price(match.group(1))
+    return ''
+
+
+def _extract_sb_new_template_customer(text):
+    """Extract the ship-to customer name from S&B's new side-by-side template."""
+    if not text:
+        return ''
+    match = re.search(
+        r'(?im)^\s*(.+?)\s+Diesel\s+Power\s+Products\s+DBA\s+Power\s+Products\s+Unlimited,\s*Inc\.?\s*505\s*$',
         text,
     )
     if not match:
         return ''
-    return _clean_price(match.group(1))
+    customer = re.sub(r'\s+', ' ', match.group(1)).strip(' ,')
+    if customer and customer.lower() not in KNOWN_CUSTOMERS:
+        return customer
+    return ''
+
+
+def _clean_sb_customer_name(value):
+    """Remove known S&B routing/sales suffixes from customer names."""
+    text = re.sub(r'\s+', ' ', str(value or '')).strip(' ,')
+    if not text:
+        return ''
+    text = re.sub(r'\s+Coop\s+Rasmussen\s*$', '', text, flags=re.IGNORECASE).strip(' ,')
+    return text
+
+
+def _is_sb_new_template(text):
+    """Return True when the S&B invoice matches the newer no-letterhead template."""
+    if not text:
+        return False
+    if re.search(r'\bShip\s+To\s+Bill\s+To\b', text, re.IGNORECASE):
+        return False
+    return bool(_extract_sb_new_template_customer(text))
 
 
 def _is_ppe_vendor_name(name):
@@ -5026,7 +5062,31 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
             layout_text = extract_layout_text_from_pdf(filepath)
         return layout_text
 
-    if _is_river_city_vendor_name(vendor_name):
+    if _is_sb_vendor_name(vendor_name):
+        default_address = get_vendor_default_address(vendor_name)
+        default_terms = get_vendor_default_terms(vendor_name)
+        if default_terms and not str(data.get('terms') or '').strip():
+            data['terms'] = default_terms
+
+        sb_shipping_cost = _extract_sb_shipping_cost(text)
+        if sb_shipping_cost:
+            data['shipping_cost'] = sb_shipping_cost
+            data['shipping_description'] = 'Shipping'
+
+        if _is_sb_new_template(text):
+            customer = _extract_sb_new_template_customer(text)
+            if customer:
+                data['customer'] = _clean_sb_customer_name(customer)
+            if default_address:
+                data['vendor_address'] = default_address
+        elif not str(data.get('vendor_address') or '').strip() and default_address:
+            data['vendor_address'] = default_address
+
+        cleaned_customer = _clean_sb_customer_name(data.get('customer', ''))
+        if cleaned_customer:
+            data['customer'] = cleaned_customer
+
+    elif _is_river_city_vendor_name(vendor_name):
         default_address = get_vendor_default_address(vendor_name)
         if default_address:
             data['vendor_address'] = default_address
@@ -5406,6 +5466,12 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
             data['customer'] = customer
 
     elif _is_serra_vendor_name(vendor_name):
+        default_address = get_vendor_default_address(vendor_name)
+        if default_address:
+            data['vendor_address'] = default_address
+        else:
+            data['vendor_address'] = ''
+
         date_match = re.search(r'Ship\s+Date\s+(\d{2}/\d{2}/\d{4})', text, re.IGNORECASE)
         if not date_match:
             date_match = re.search(r'Printed\s+(\d{2}/\d{2}/\d{4})', text, re.IGNORECASE)
@@ -5763,7 +5829,8 @@ def parse_invoice(filepath, status_callback=None, sender_email='', sender_header
     resolved_vendor = normalize_vendor_name(data.get('vendor', ''))
     vendor_changed = parsed_vendor != resolved_vendor
     if vendor_changed and (
-        _is_mishimoto_vendor_name(resolved_vendor)
+        _is_sb_vendor_name(resolved_vendor)
+        or _is_mishimoto_vendor_name(resolved_vendor)
         or _is_holley_vendor_name(resolved_vendor)
         or _is_pt_vendor_name(resolved_vendor)
         or _is_fumoto_vendor_name(resolved_vendor)

@@ -78,6 +78,62 @@ SENDER_METADATA_FIELDNAMES = [
     'downloaded_at',
 ]
 
+
+def _lookup_sender_metadata_entry(entries, source_file, filename=''):
+    """Return sender metadata by exact source path first, then by filename fallback."""
+    if not entries:
+        return {}
+
+    source_key = str(source_file or '').strip().replace('\\', '/')
+    if source_key and source_key in entries:
+        return entries[source_key]
+
+    filename_key = os.path.basename(str(filename or '')).strip().lower()
+    if not filename_key and source_key:
+        filename_key = os.path.basename(source_key).strip().lower()
+    if not filename_key:
+        return {}
+
+    fallback = {}
+    for entry in entries.values():
+        entry_name = os.path.basename(str((entry or {}).get('filename', '') or '')).strip().lower()
+        if entry_name == filename_key:
+            fallback = entry
+    return fallback
+
+
+def _sender_sidecar_path(filepath):
+    return f"{filepath}.sender.json"
+
+
+def _load_sender_sidecar(filepath):
+    """Load sender metadata sidecar stored next to a downloaded invoice file."""
+    path = _sender_sidecar_path(filepath)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            payload = json.load(f)
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: str(payload.get(key, '') or '').strip()
+        for key in SENDER_METADATA_FIELDNAMES
+    }
+
+
+def _save_sender_sidecar(filepath, entry):
+    """Persist sender metadata next to the downloaded invoice file."""
+    path = _sender_sidecar_path(filepath)
+    payload = {
+        key: str((entry or {}).get(key, '') or '').strip()
+        for key in SENDER_METADATA_FIELDNAMES
+    }
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, indent=2)
+
 def _normalize_vendor_key(name):
     if not name:
         return ''
@@ -1802,7 +1858,7 @@ class InvoiceExtractorGUI:
                 if not filename:
                     continue
                 source_file = _source_file(filename)
-                sender_metadata[source_file] = {
+                metadata_entry = {
                     'source_file': source_file,
                     'filename': filename,
                     'sender_email': str((attachment or {}).get('sender_email', '') or '').strip().lower(),
@@ -1811,6 +1867,17 @@ class InvoiceExtractorGUI:
                     'message_id': str((attachment or {}).get('message_id', '') or '').strip(),
                     'downloaded_at': timestamp_now,
                 }
+                sender_metadata[source_file] = metadata_entry
+                try:
+                    _save_sender_sidecar(
+                        os.path.join(self.invoices_dir, filename),
+                        metadata_entry,
+                    )
+                except Exception as e:
+                    self.log(
+                        f"Warning: could not save sender sidecar for {filename} ({e})",
+                        "warning",
+                    )
                 sender_metadata_updated = True
             if sender_metadata_updated:
                 self._save_sender_metadata(sender_metadata.values())
@@ -1850,7 +1917,24 @@ class InvoiceExtractorGUI:
 
                     try:
                         source_path = _source_file(filename)
-                        sender_entry = sender_metadata.get(source_path, {})
+                        sender_entry = _load_sender_sidecar(filepath)
+                        if not sender_entry:
+                            sender_entry = _lookup_sender_metadata_entry(
+                                sender_metadata,
+                                source_path,
+                                filename,
+                            )
+                        if sender_entry:
+                            sender_ref = str(sender_entry.get('sender_email', '')).strip() or str(
+                                sender_entry.get('sender_header', '')
+                            ).strip()
+                            if sender_ref:
+                                self.log(f"  Sender metadata: {sender_ref}")
+                        else:
+                            self.log(
+                                f"  No sender metadata found for {filename}; vendor detection will rely on invoice content.",
+                                "warning",
+                            )
                         invoice_data = parse_invoice(
                             filepath,
                             self.log,
