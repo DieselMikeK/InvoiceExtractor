@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Add a compact today before/after time picker and simplify the status panel to show only missing requirements.",
-    "requested_at":  "2026-04-07T22:32:34.6288035Z"
+    "notes":  "Match today before/after filters against Gmail message timestamps so downloads only include emails inside the requested Gmail time window.",
+    "requested_at":  "2026-04-07T22:55:59.7846840Z"
 }
