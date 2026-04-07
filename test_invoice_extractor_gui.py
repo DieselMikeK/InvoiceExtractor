@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from invoice_extractor_gui import (
     _build_today_time_query,
+    _format_time_value,
     _is_diamond_eye_zero_shipping_batch_row,
     _load_sender_sidecar,
     _parse_time_input,
@@ -91,6 +92,9 @@ class GmailTodayTimeQueryTests(unittest.TestCase):
     def test_parse_time_input_accepts_24_hour_and_ampm(self):
         self.assertEqual(_parse_time_input('14:35').strftime('%H:%M'), '14:35')
         self.assertEqual(_parse_time_input('2:35 PM').strftime('%H:%M'), '14:35')
+
+    def test_format_time_value_uses_compact_ampm_display(self):
+        self.assertEqual(_format_time_value(_parse_time_input('2:35 PM')), '2:35 PM')
 
     def test_build_today_time_query_before_uses_start_of_day_to_boundary(self):
         reference = datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)

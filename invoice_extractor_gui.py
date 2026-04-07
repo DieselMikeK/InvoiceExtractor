@@ -399,6 +399,13 @@ def _build_today_time_query(boundary_value, direction, reference_dt=None):
     return f"after:{int(boundary_dt.timestamp())} before:{int(day_end.timestamp())}"
 
 
+def _format_time_value(value):
+    """Format a time-of-day value for display in the UI."""
+    if value is None:
+        return ''
+    return value.strftime('%I:%M %p').lstrip('0')
+
+
 def _ensure_single_instance(window_title):
     if os.name != 'nt':
         return True
@@ -466,6 +473,10 @@ class InvoiceExtractorGUI:
         self._calendar_warned = False
         self._calendar_suppress_widget = None
         self._calendar_suppress_until = 0.0
+        self._time_picker_open = False
+        self._time_picker_suppress_until = 0.0
+        self._today_time_placeholder = "Time of Day"
+        self._today_time_placeholder_active = False
         self.app_version = load_app_version()
         self.available_update = None
         self.update_button = None
@@ -1302,6 +1313,127 @@ class InvoiceExtractorGUI:
                 y = anchor_widget.winfo_rooty() + anchor_widget.winfo_height() + 8
             top.geometry(f"+{x}+{y}")
 
+    def _set_today_time_placeholder(self):
+        if not hasattr(self, 'today_time_entry'):
+            return
+        self._today_time_placeholder_active = True
+        self.today_time_value_var.set(self._today_time_placeholder)
+        self.today_time_entry.config(fg='#7a7a7a')
+
+    def _set_today_time_display_value(self, value):
+        if not hasattr(self, 'today_time_entry'):
+            return
+        text = str(value or '').strip()
+        if not text:
+            self._set_today_time_placeholder()
+            return
+        self._today_time_placeholder_active = False
+        self.today_time_value_var.set(text)
+        self.today_time_entry.config(fg='#111111')
+
+    def _get_today_time_filter_value(self):
+        if getattr(self, '_today_time_placeholder_active', False):
+            return ''
+        return self.today_time_value_var.get().strip()
+
+    def _open_time_picker_at(self, target_var, anchor_widget, title=None):
+        if getattr(self, '_time_picker_open', False):
+            return "break"
+        if time.time() < getattr(self, '_time_picker_suppress_until', 0):
+            return "break"
+
+        self._time_picker_open = True
+        top = tk.Toplevel(self.root)
+        top.title(title or "Select Time")
+        top.transient(self.root)
+        top.grab_set()
+
+        existing = _parse_time_input(self._get_today_time_filter_value())
+        if existing is None:
+            now_local = datetime.now().astimezone().time().replace(second=0, microsecond=0)
+            existing = dt_time(now_local.hour, now_local.minute)
+
+        hour_12 = existing.hour % 12 or 12
+        minute = existing.minute
+        am_pm = 'AM' if existing.hour < 12 else 'PM'
+
+        picker_frame = ttk.Frame(top, padding=10)
+        picker_frame.pack(fill=tk.BOTH, expand=True)
+
+        hour_var = tk.StringVar(value=f"{hour_12:02d}")
+        minute_var = tk.StringVar(value=f"{minute:02d}")
+        am_pm_var = tk.StringVar(value=am_pm)
+
+        ttk.Spinbox(
+            picker_frame,
+            values=tuple(f"{value:02d}" for value in range(1, 13)),
+            textvariable=hour_var,
+            width=4,
+            wrap=True,
+            justify='center',
+            state='readonly',
+        ).pack(side=tk.LEFT)
+        ttk.Label(picker_frame, text=":").pack(side=tk.LEFT, padx=2)
+        ttk.Spinbox(
+            picker_frame,
+            values=tuple(f"{value:02d}" for value in range(0, 60)),
+            textvariable=minute_var,
+            width=4,
+            wrap=True,
+            justify='center',
+            state='readonly',
+        ).pack(side=tk.LEFT)
+        ttk.Combobox(
+            picker_frame,
+            textvariable=am_pm_var,
+            values=("AM", "PM"),
+            width=5,
+            state='readonly',
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        def _close():
+            self._time_picker_open = False
+            self._time_picker_suppress_until = time.time() + 0.5
+            top.grab_release()
+            top.destroy()
+
+        def _set_time():
+            try:
+                selected_hour = int(str(hour_var.get()).strip())
+                selected_minute = int(str(minute_var.get()).strip())
+                selected_am_pm = str(am_pm_var.get()).strip().upper()
+                if selected_hour < 1 or selected_hour > 12:
+                    raise ValueError
+                if selected_minute < 0 or selected_minute > 59:
+                    raise ValueError
+                if selected_am_pm not in {'AM', 'PM'}:
+                    raise ValueError
+            except ValueError:
+                self.log("Invalid time selection.", "error")
+                return
+
+            hour_24 = selected_hour % 12
+            if selected_am_pm == 'PM':
+                hour_24 += 12
+            selected_time = dt_time(hour_24, selected_minute)
+            self._set_today_time_display_value(_format_time_value(selected_time))
+            _close()
+
+        btn_frame = ttk.Frame(top)
+        btn_frame.pack(pady=(0, 10))
+        ttk.Button(btn_frame, text="Set Time", command=_set_time).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="Cancel", command=_close).pack(side=tk.LEFT)
+        top.protocol("WM_DELETE_WINDOW", _close)
+
+        top.update_idletasks()
+        if anchor_widget is not None:
+            x = anchor_widget.winfo_rootx()
+            y = anchor_widget.winfo_rooty() - top.winfo_height() - 8
+            if y < 0:
+                y = anchor_widget.winfo_rooty() + anchor_widget.winfo_height() + 8
+            top.geometry(f"+{x}+{y}")
+        return "break"
+
     def _parse_date_input(self, value):
         if not value:
             return None
@@ -1321,7 +1453,7 @@ class InvoiceExtractorGUI:
             return f"after:{after} before:{before}", "today"
 
         if self.today_time_filter_var.get():
-            time_raw = self.today_time_value_var.get().strip()
+            time_raw = self._get_today_time_filter_value()
             if not time_raw:
                 self.log("Today time filter is enabled but no time was provided.", "error")
                 return None, None
@@ -1371,12 +1503,11 @@ class InvoiceExtractorGUI:
         if hasattr(self, 'date_to_entry'):
             self.date_to_entry.config(state=state)
         time_enabled = self.today_time_filter_var.get()
-        time_state = tk.NORMAL if time_enabled else tk.DISABLED
         combo_state = 'readonly' if time_enabled else 'disabled'
         if hasattr(self, 'today_time_mode_combo'):
             self.today_time_mode_combo.config(state=combo_state)
         if hasattr(self, 'today_time_entry'):
-            self.today_time_entry.config(state=time_state)
+            self.today_time_entry.config(state='readonly' if time_enabled else tk.DISABLED)
 
     def _on_date_filter_toggle(self):
         if self.date_filter_var.get():
@@ -1506,41 +1637,32 @@ class InvoiceExtractorGUI:
         # Credential status
         cred_exists = os.path.exists(os.path.join(self.required_dir, 'client_secret.json'))
         token_exists = os.path.exists(os.path.join(self.required_dir, 'token.pickle'))
-        ocr_status = "Available" if OCR_AVAILABLE else "Not available (scanned PDFs will be skipped)"
-
-        self.cred_label = ttk.Label(
-            info_frame,
-            text=(
-                f"Credentials: {'Found' if cred_exists else 'MISSING - place client_secret.json in App/required'}"
-            ),
-            foreground='green' if cred_exists else 'red'
-        )
-        self.cred_label.pack(anchor=tk.W)
-
-        self.auth_label = ttk.Label(
-            info_frame,
-            text=f"Authentication: {'Cached (token.pickle found)' if token_exists else 'Will authenticate on first run'}",
-            foreground='green' if token_exists else 'gray'
-        )
-        self.auth_label.pack(anchor=tk.W)
-
         ttk.Label(
             info_frame,
-            text=f"OCR (Tesseract): {ocr_status}",
-            foreground='green' if OCR_AVAILABLE else 'orange'
+            text="Connected",
+            foreground='green',
         ).pack(anchor=tk.W)
 
-        # Count existing invoices
-        invoice_count = 0
-        if os.path.exists(self.invoices_dir):
-            invoice_count = len([
-                f for f in os.listdir(self.invoices_dir)
-                if f.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.tiff'))
-            ])
-        ttk.Label(
-            info_frame,
-            text=f"Invoices downloaded: {invoice_count}"
-        ).pack(anchor=tk.W)
+        if not cred_exists:
+            ttk.Label(
+                info_frame,
+                text="Credentials missing: place client_secret.json in App/required",
+                foreground='red',
+            ).pack(anchor=tk.W)
+
+        if not token_exists:
+            ttk.Label(
+                info_frame,
+                text="Authentication not cached yet: Gmail sign-in will open on first run",
+                foreground='orange',
+            ).pack(anchor=tk.W)
+
+        if not OCR_AVAILABLE:
+            ttk.Label(
+                info_frame,
+                text="OCR not found: scanned PDFs will be skipped",
+                foreground='orange',
+            ).pack(anchor=tk.W)
 
         # Date filter frame (inside Status)
         filter_frame = ttk.LabelFrame(info_frame, text="Filter Invoices by Date (Optional)", padding=8)
@@ -1580,37 +1702,55 @@ class InvoiceExtractorGUI:
             )
         )
 
+        today_time_row = ttk.Frame(filter_frame)
+        today_time_row.grid(row=1, column=0, columnspan=5, sticky='w', pady=(4, 0))
+
         self.today_time_filter_check = ttk.Checkbutton(
-            filter_frame,
+            today_time_row,
             text="All from Today",
             variable=self.today_time_filter_var,
             command=self._on_today_time_filter_toggle
         )
-        self.today_time_filter_check.grid(row=1, column=0, sticky='w', pady=(4, 0))
+        self.today_time_filter_check.pack(side=tk.LEFT)
 
         self.today_time_mode_combo = ttk.Combobox(
-            filter_frame,
+            today_time_row,
             textvariable=self.today_time_mode_var,
             values=("Before", "After"),
             width=8,
             state='readonly',
         )
-        self.today_time_mode_combo.grid(row=1, column=1, padx=(10, 2), pady=(4, 0))
+        self.today_time_mode_combo.pack(side=tk.LEFT, padx=(6, 6))
 
-        ttk.Label(filter_frame, text="Time").grid(row=1, column=2, padx=(0, 2), pady=(4, 0))
-        self.today_time_entry = ttk.Entry(
-            filter_frame,
+        self.today_time_entry = tk.Entry(
+            today_time_row,
             textvariable=self.today_time_value_var,
-            width=12,
+            width=14,
+            relief=tk.SUNKEN,
+            bd=1,
+            readonlybackground='white',
+            disabledbackground='#f0f0f0',
+            disabledforeground='#7a7a7a',
+            fg='#7a7a7a',
         )
-        self.today_time_entry.grid(row=1, column=3, padx=(0, 10), pady=(4, 0))
-
-        ttk.Label(filter_frame, text="HH:MM or 1:30 PM").grid(
-            row=1,
-            column=4,
-            sticky='w',
-            pady=(4, 0),
+        self.today_time_entry.pack(side=tk.LEFT)
+        self.today_time_entry.bind(
+            "<Button-1>",
+            lambda _e: self._open_time_picker_at(
+                self.today_time_value_var,
+                self.today_time_entry,
+                "Select Time of Day",
+            )
         )
+        self.today_time_entry.bind(
+            "<FocusIn>",
+            lambda _e: self._open_time_picker_at(
+                self.today_time_value_var,
+                self.today_time_entry,
+                "Select Time of Day",
+            )
+        )
+        self._set_today_time_placeholder()
 
         self.today_filter_check = ttk.Checkbutton(
             filter_frame,
