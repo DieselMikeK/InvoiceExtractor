@@ -1,24 +1,24 @@
 {
-  "version": "1.2.22",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.22/InvoiceExtractor.exe",
-  "sha256": "c49c9b3d092f1604178939d79a01e2c0cffc6c24ea4a6b9226ebd3f1037d8dcd",
-  "notes": "Fix sender-based vendor detection for KC/Serra, improve S&B template parsing, and blank DPP DISCOUNT SKUs on export.",
-  "published_at": "04/07/2026 21:46:59",
+  "version": "1.2.23",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.23/InvoiceExtractor.exe",
+  "sha256": "10ba9a4e8a3171f2dbfc5f1ce2fc2ecbd819605abc29a3d6056e54c7a0d764a3",
+  "notes": "Detect vendor senders inside forwarded Gmail emails, only tag processed emails after full download, and add today before/after time filters.",
+  "published_at": "04/07/2026 22:20:33",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.22/InvoiceExtractor.exe",
-      "sha256": "c49c9b3d092f1604178939d79a01e2c0cffc6c24ea4a6b9226ebd3f1037d8dcd"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.23/InvoiceExtractor.exe",
+      "sha256": "10ba9a4e8a3171f2dbfc5f1ce2fc2ecbd819605abc29a3d6056e54c7a0d764a3"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.22/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.23/app-vendors.csv",
       "sha256": "599a03f38379aae31a6181f13a125982c3356bb6e5c67bf712c606a0c5faf9f2"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.22/update-InvoiceExtractorUpdater.exe",
-      "sha256": "82b269a7b8f6fba0ae1fad98c7ebb1dd82c94be95c5c8a189701bac6513cac13"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.23/update-InvoiceExtractorUpdater.exe",
+      "sha256": "c222f31fe5c7fe96fab84901ed931a81141bf4bf4df4cc6184beecd19de49196"
     }
   ]
 }
