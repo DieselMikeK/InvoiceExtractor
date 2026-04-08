@@ -1922,6 +1922,46 @@ def _extract_sb_shipping_cost(text):
     return ''
 
 
+def _extract_dd_shipping_cost(text):
+    """Extract Dynomite Diesel shipping from a plain footer row above total."""
+    if not text:
+        return ''
+    match = re.search(r'(?im)^\s*SHIPPING\s+\$?([\d,]+\.\d{2})\s*$', text)
+    if not match:
+        return ''
+    return _clean_price(match.group(1))
+
+
+def _extract_dd_customer_from_text(text):
+    """Extract Dynomite Diesel ship-to customer from OCR text when columns collapse."""
+    if not text:
+        return ''
+
+    lines = [str(line).strip() for line in str(text).splitlines() if str(line).strip()]
+    for idx, line in enumerate(lines):
+        if not re.search(r'\bBILL\s+TO\s+SHIP\s+TO\s+INVOICE\b', line, re.IGNORECASE):
+            continue
+
+        for candidate in lines[idx + 1: idx + 4]:
+            base = re.split(r'\bDATE\b', candidate, maxsplit=1, flags=re.IGNORECASE)[0].strip(' ,')
+            if not base:
+                continue
+
+            match = re.search(
+                r'(?i)(?:\d+\s+.*?\b(?:Ave|Avenue|St|Street|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Way|Hwy|Highway)\b\s+)?'
+                r'([A-Z][A-Za-z\'\.-]+(?:\s+[A-Z][A-Za-z\'\.-]+){1,3})\s*$',
+                base,
+            )
+            if not match:
+                continue
+
+            customer = _clean_ship_to_contact_name(match.group(1))
+            if customer:
+                return customer
+
+    return ''
+
+
 def _extract_sb_new_template_customer(text):
     """Extract the ship-to customer name from S&B's new side-by-side template."""
     if not text:
@@ -5427,8 +5467,17 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
 
         ship_to_lines = _extract_dd_ship_to_lines(filepath)
         customer = _customer_name_from_ship_to_lines(ship_to_lines)
+        if not customer:
+            customer = _extract_dd_customer_from_text(text)
         if customer:
             data['customer'] = customer
+
+        if not data.get('shipping_cost'):
+            dd_shipping_cost = _extract_dd_shipping_cost(text) or _extract_dd_shipping_cost(layout)
+            if dd_shipping_cost:
+                data['shipping_cost'] = dd_shipping_cost
+                if not data.get('shipping_description'):
+                    data['shipping_description'] = 'Shipping'
 
     elif _is_kc_turbos_vendor_name(vendor_name):
         layout = _get_layout_text()
