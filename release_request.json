@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Match today before/after filters against Gmail message timestamps so downloads only include emails inside the requested Gmail time window.",
-    "requested_at":  "2026-04-07T22:55:59.7846840Z"
+    "notes":  "Fix Dynomite Diesel OCR invoices so merged Bill To/Ship To scans keep the correct customer name and capture rare footer shipping charges.",
+    "requested_at":  "2026-04-08T16:19:35.5355345Z"
 }
