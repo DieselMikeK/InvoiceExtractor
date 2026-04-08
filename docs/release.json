@@ -1,24 +1,24 @@
 {
-  "version": "1.2.25",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.25/InvoiceExtractor.exe",
-  "sha256": "4cce047320227e14862acd12e92733695468ca4b6ef9e8b510c3e6976d39b225",
-  "notes": "Match today before/after filters against Gmail message timestamps so downloads only include emails inside the requested Gmail time window.",
-  "published_at": "04/07/2026 22:58:02",
+  "version": "1.2.26",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.26/InvoiceExtractor.exe",
+  "sha256": "618dd1044401f2c00832337158a7f0837c463e580fec2ff5a5fa672e29888051",
+  "notes": "Fix Dynomite Diesel OCR invoices so merged Bill To/Ship To scans keep the correct customer name and capture rare footer shipping charges.",
+  "published_at": "04/08/2026 16:21:28",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.25/InvoiceExtractor.exe",
-      "sha256": "4cce047320227e14862acd12e92733695468ca4b6ef9e8b510c3e6976d39b225"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.26/InvoiceExtractor.exe",
+      "sha256": "618dd1044401f2c00832337158a7f0837c463e580fec2ff5a5fa672e29888051"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.25/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.26/app-vendors.csv",
       "sha256": "599a03f38379aae31a6181f13a125982c3356bb6e5c67bf712c606a0c5faf9f2"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.25/update-InvoiceExtractorUpdater.exe",
-      "sha256": "3f572caeab4aba30dfde6395386d38ad1e4845b3da6086672b9250f275d0e7cd"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.26/update-InvoiceExtractorUpdater.exe",
+      "sha256": "9289c2dd0f8d9db1feccee561b7f520a275bd2fcde4eab5deb09ac1ced3dd6b2"
     }
   ]
 }
