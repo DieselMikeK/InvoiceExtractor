@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix Dynomite Diesel OCR invoices so merged Bill To/Ship To scans keep the correct customer name and capture rare footer shipping charges.",
-    "requested_at":  "2026-04-08T16:19:35.5355345Z"
+    "notes":  "Match SuspensionMAXX and ISSPRO DPP discount rows to Red Head item-style export rules.",
+    "requested_at":  "2026-04-09T17:12:21.8483688Z"
 }
