@@ -1073,8 +1073,8 @@ def _apply_export_overrides(item, *, row_type=None, category=None, product_servi
     return item
 
 
-def _apply_redhead_discount_overrides(line_items):
-    """Restore Red Head discount rows to the expected item-style export mapping."""
+def _apply_item_style_discount_overrides(line_items):
+    """Restore discount rows to the expected item-style export mapping."""
     for item in line_items or []:
         if not _is_discount_line_item(item):
             continue
@@ -1085,6 +1085,11 @@ def _apply_redhead_discount_overrides(line_items):
             product_service='Inventory Item (Sellable Item)',
             sku='DPP Discount',
         )
+
+
+def _apply_redhead_discount_overrides(line_items):
+    """Restore Red Head discount rows to the expected item-style export mapping."""
+    _apply_item_style_discount_overrides(line_items)
 
 
 def _apply_stock_order_summary(data, description='STOCK ORDER', customer=''):
@@ -5751,8 +5756,12 @@ def parse_invoice_text(text, filepath=None):
 
     # --- Line Items ---
     data['line_items'] = extract_line_items(text, filepath, vendor_name=data.get('vendor'))
-    if _is_redhead_vendor_name(data.get('vendor', '')):
-        _apply_redhead_discount_overrides(data['line_items'])
+    if (
+        _is_redhead_vendor_name(data.get('vendor', ''))
+        or _is_isspro_vendor_name(data.get('vendor', ''))
+        or _is_suspensionmaxx_vendor_name(data.get('vendor', ''))
+    ):
+        _apply_item_style_discount_overrides(data['line_items'])
     if _is_turn14_vendor_name(data.get('vendor', '')):
         has_discount_item = any(
             bool(item.get('is_discount')) or 'discount' in (
