@@ -1,24 +1,24 @@
 {
-  "version": "1.2.29",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.29/InvoiceExtractor.exe",
-  "sha256": "e6aa4e276c993ec447b86dc0551ba9066c488e86c8eb822257aa0b46e8657a81",
-  "notes": "add the word \"test\" underneath the status",
-  "published_at": "04/10/2026 17:59:14",
+  "version": "1.2.30",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.30/InvoiceExtractor.exe",
+  "sha256": "dd30acbe7720dbcd30bf5f71b2aa79ccdcf613567bf7682bfdb6323e5f4757f9",
+  "notes": "remove the word \"test\" in the status area",
+  "published_at": "04/10/2026 18:20:06",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.29/InvoiceExtractor.exe",
-      "sha256": "e6aa4e276c993ec447b86dc0551ba9066c488e86c8eb822257aa0b46e8657a81"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.30/InvoiceExtractor.exe",
+      "sha256": "dd30acbe7720dbcd30bf5f71b2aa79ccdcf613567bf7682bfdb6323e5f4757f9"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.29/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.30/app-vendors.csv",
       "sha256": "599a03f38379aae31a6181f13a125982c3356bb6e5c67bf712c606a0c5faf9f2"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.29/update-InvoiceExtractorUpdater.exe",
-      "sha256": "d1436f97ad976dafda5f0a44026869bb63d1b0fd4e6cdaeb27ab78eb27d6f680"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.30/update-InvoiceExtractorUpdater.exe",
+      "sha256": "f97f1a918a8cd64e493c1c767969c49b78aeeebadcdc9debc314aebf90d54e0a"
     }
   ]
 }
