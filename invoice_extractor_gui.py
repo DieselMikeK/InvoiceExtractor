@@ -232,6 +232,35 @@ def load_vendor_aliases(preferred_dir):
     return aliases
 
 
+def _get_status_messages(required_dir, ocr_available=OCR_AVAILABLE):
+    messages = [
+        {'text': "Connected", 'foreground': 'green'},
+        {'text': "test"},
+    ]
+    cred_exists = os.path.exists(os.path.join(required_dir, 'client_secret.json'))
+    token_exists = os.path.exists(os.path.join(required_dir, 'token.pickle'))
+
+    if not cred_exists:
+        messages.append({
+            'text': "Credentials missing: place client_secret.json in App/required",
+            'foreground': 'red',
+        })
+
+    if not token_exists:
+        messages.append({
+            'text': "Authentication not cached yet: Gmail sign-in will open on first run",
+            'foreground': 'orange',
+        })
+
+    if not ocr_available:
+        messages.append({
+            'text': "OCR not found: scanned PDFs will be skipped",
+            'foreground': 'orange',
+        })
+
+    return messages
+
+
 def _looks_like_sku(value):
     if value is None:
         return False
@@ -1673,34 +1702,8 @@ class InvoiceExtractorGUI:
         info_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Credential status
-        cred_exists = os.path.exists(os.path.join(self.required_dir, 'client_secret.json'))
-        token_exists = os.path.exists(os.path.join(self.required_dir, 'token.pickle'))
-        ttk.Label(
-            info_frame,
-            text="Connected",
-            foreground='green',
-        ).pack(anchor=tk.W)
-
-        if not cred_exists:
-            ttk.Label(
-                info_frame,
-                text="Credentials missing: place client_secret.json in App/required",
-                foreground='red',
-            ).pack(anchor=tk.W)
-
-        if not token_exists:
-            ttk.Label(
-                info_frame,
-                text="Authentication not cached yet: Gmail sign-in will open on first run",
-                foreground='orange',
-            ).pack(anchor=tk.W)
-
-        if not OCR_AVAILABLE:
-            ttk.Label(
-                info_frame,
-                text="OCR not found: scanned PDFs will be skipped",
-                foreground='orange',
-            ).pack(anchor=tk.W)
+        for label_kwargs in _get_status_messages(self.required_dir):
+            ttk.Label(info_frame, **label_kwargs).pack(anchor=tk.W)
 
         # Date filter frame (inside Status)
         filter_frame = ttk.LabelFrame(info_frame, text="Filter Invoices by Date (Optional)", padding=8)

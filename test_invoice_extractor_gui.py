@@ -10,6 +10,7 @@ from invoice_extractor_gui import (
     _build_today_time_query,
     _cell_fill_rgb,
     _format_time_value,
+    _get_status_messages,
     _is_diamond_eye_zero_shipping_batch_row,
     _load_sender_sidecar,
     _parse_time_input,
@@ -125,6 +126,22 @@ class GmailTodayTimeQueryTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             _build_today_time_query('bad-time', 'Before', reference)
+
+
+class StatusMessageTests(unittest.TestCase):
+    def test_places_test_immediately_below_connected(self):
+        missing_required_dir = os.path.join(
+            os.getcwd(),
+            '__missing_required_dir_for_status_test__',
+        )
+        messages = _get_status_messages(missing_required_dir, ocr_available=True)
+
+        self.assertEqual(
+            [message['text'] for message in messages[:2]],
+            ['Connected', 'test'],
+        )
+        self.assertEqual(messages[0]['foreground'], 'green')
+        self.assertNotIn('foreground', messages[1])
 
 
 class DuplicateHighlightTests(unittest.TestCase):
