@@ -143,6 +143,30 @@ def _normalize_vendor_key(name):
     return s
 
 
+def _cell_fill_rgb(cell):
+    """Return the uppercase RGB/index string for a solid cell fill, if present."""
+    fill = getattr(cell, 'fill', None)
+    if not fill or fill.patternType != 'solid':
+        return ''
+    return str(fill.start_color.rgb or fill.start_color.index or '').upper()
+
+
+def _should_preserve_duplicate_row_fill(cell):
+    """Keep semantic row fills when applying duplicate markers."""
+    rgb = _cell_fill_rgb(cell)
+    if not rgb:
+        return False
+    return rgb.endswith((
+        'FFFF00',  # validation failure / warning
+        'D8B4FE',  # stock order
+        'FFC000',  # low margin
+        'FF6666',  # Shopify core missing
+        'DDEBF7',  # Shopify core mismatch
+        'FFCCCC',  # not invoice
+        'FF9999',  # not invoice alternating dark
+    ))
+
+
 def _split_vendor_aliases(value):
     if not value:
         return []
@@ -1224,11 +1248,8 @@ class InvoiceExtractorGUI:
 
             # Match row fill for duplicate columns first.
             first_cell = ws.cell(row=row_num, column=1)
-            is_yellow = False
+            preserve_row_fill = _should_preserve_duplicate_row_fill(first_cell)
             if first_cell.fill and first_cell.fill.patternType == 'solid':
-                color = first_cell.fill.start_color.rgb or first_cell.fill.start_color.index
-                if color and str(color).upper().endswith('FFFF00'):
-                    is_yellow = True
                 row_fill = PatternFill(
                     start_color=first_cell.fill.start_color.rgb,
                     end_color=first_cell.fill.end_color.rgb,
@@ -1237,8 +1258,8 @@ class InvoiceExtractorGUI:
                 ws.cell(row=row_num, column=dup_status_col).fill = row_fill
                 ws.cell(row=row_num, column=dup_ref_col).fill = row_fill
 
-            # Override whole row for duplicate entries with darker alternating gray.
-            if entry_idx in dup_entry_indices and not is_yellow:
+            # Override only neutral rows; preserve semantic fills like stock-order purple.
+            if entry_idx in dup_entry_indices and not preserve_row_fill:
                 dup_fill = dup_fill_dark if (entry_idx % 2 == 0) else dup_fill_light
                 for col in range(1, ws.max_column + 1):
                     ws.cell(row=row_num, column=col).fill = dup_fill

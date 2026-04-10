@@ -3,15 +3,21 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 
+from openpyxl import load_workbook
+
 from invoice_extractor_gui import (
+    InvoiceExtractorGUI,
     _build_today_time_query,
+    _cell_fill_rgb,
     _format_time_value,
     _is_diamond_eye_zero_shipping_batch_row,
     _load_sender_sidecar,
     _parse_time_input,
     _lookup_sender_metadata_entry,
+    _should_preserve_duplicate_row_fill,
     _save_sender_sidecar,
 )
+from spreadsheet_writer import write_invoice_to_spreadsheet
 
 
 class DiamondEyeBatchExportFilterTests(unittest.TestCase):
@@ -119,6 +125,54 @@ class GmailTodayTimeQueryTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             _build_today_time_query('bad-time', 'Before', reference)
+
+
+class DuplicateHighlightTests(unittest.TestCase):
+    def test_preserves_stock_order_fill_when_duplicate_marked(self):
+        invoice_data = {
+            'invoice_number': 'STOCK-1',
+            'vendor': 'Turn 14 Distribution',
+            'vendor_address': '100 Tournament Dr. Horsham, PA 19044',
+            'terms': 'Credit Card',
+            'date': '4/10/2026',
+            'due_date': '',
+            'po_number': '0058197',
+            'customer': 'Diesel Power Products',
+            'total': '',
+            'shipping_cost': '',
+            'stock_order': True,
+            'stock_order_description': 'STOCK ORDER',
+            'source_path': r'Invoices\\Turn14_Invoice_16039445.pdf',
+            'line_items': [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, 'duplicates.xlsx')
+            write_invoice_to_spreadsheet(output_path, invoice_data)
+
+            gui = InvoiceExtractorGUI.__new__(InvoiceExtractorGUI)
+            gui._apply_duplicate_flags(
+                output_path,
+                history_by_po={
+                    '0058197': [
+                        {
+                            'po_number': '0058197',
+                            'source_file': 'Invoices/Turn14_SalesOrder_16271604.pdf',
+                            'downloaded_at': '2026-04-08 10:00:00',
+                        }
+                    ]
+                },
+                history_by_bill={},
+            )
+
+            ws = load_workbook(output_path).active
+            first_cell = ws.cell(row=2, column=1)
+            self.assertTrue(_should_preserve_duplicate_row_fill(first_cell))
+            self.assertTrue(_cell_fill_rgb(first_cell).endswith('D8B4FE'))
+            self.assertEqual(
+                ws.cell(row=2, column=25).value,
+                'Duplicate PO (history)',
+            )
 
 
 if __name__ == '__main__':

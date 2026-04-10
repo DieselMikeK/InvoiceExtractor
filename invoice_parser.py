@@ -1105,6 +1105,22 @@ def _apply_stock_order_summary(data, description='STOCK ORDER', customer=''):
     return data
 
 
+def _matches_internal_stock_customer_hint(value):
+    """Return True when a parsed customer points to our company or warehouse address."""
+    text = re.sub(r'\s+', ' ', str(value or '')).strip(' ,')
+    if not text:
+        return False
+    if _OUR_COMPANY_NAMES.search(text):
+        return True
+    return bool(
+        re.search(
+            r'\b(?:6200\s+)?E(?:ast)?\.?\s+Main(?:\s+Avenue|\s+Ave\.?)\b',
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
 _OUR_ADDRESS_PATTERNS = [
     re.compile(r'6200\s+E\.?\s+Main', re.IGNORECASE),
     re.compile(r'spokane\s+valley', re.IGNORECASE),
@@ -5950,6 +5966,38 @@ def parse_invoice(filepath, status_callback=None, sender_email='', sender_header
         cb(
             "  Fleece stocking-order invoice detected from footer note; outputting "
             "STOCK ORDER summary row "
+            f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
+            "warning"
+        )
+    elif _is_holley_vendor_name(data.get('vendor', '')) and _matches_internal_stock_customer_hint(
+        data.get('customer', '')
+    ):
+        _apply_stock_order_summary(
+            data,
+            description='STOCK ORDER',
+            customer='Diesel Power Products',
+        )
+        bill_no = str(data.get('invoice_number') or '').strip() or 'N/A'
+        po_number = str(data.get('po_number') or '').strip() or 'N/A'
+        cb(
+            "  Holley stock-order invoice detected from internal ship-to customer; "
+            "outputting STOCK ORDER summary row "
+            f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
+            "warning"
+        )
+    elif _is_fl_vendor_name(data.get('vendor', '')) and _matches_internal_stock_customer_hint(
+        data.get('customer', '')
+    ):
+        _apply_stock_order_summary(
+            data,
+            description='STOCK ORDER',
+            customer='Diesel Power Products',
+        )
+        bill_no = str(data.get('invoice_number') or '').strip() or 'N/A'
+        po_number = str(data.get('po_number') or '').strip() or 'N/A'
+        cb(
+            "  Fleece stock-order invoice detected from internal ship-to customer; "
+            "outputting STOCK ORDER summary row "
             f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
             "warning"
         )
