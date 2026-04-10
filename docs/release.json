@@ -1,24 +1,24 @@
 {
-  "version": "1.2.28",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.28/InvoiceExtractor.exe",
-  "sha256": "2a42560d63617ea956e37914d20fc976461d1a9fe33dd559f11437d49de2513c",
-  "notes": "Preserve stock-order purple highlighting when duplicate flags are applied, and detect Holley/Fleece stock orders from internal ship-to customers.",
-  "published_at": "04/10/2026 17:15:02",
+  "version": "1.2.29",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.29/InvoiceExtractor.exe",
+  "sha256": "e6aa4e276c993ec447b86dc0551ba9066c488e86c8eb822257aa0b46e8657a81",
+  "notes": "add the word \"test\" underneath the status",
+  "published_at": "04/10/2026 17:59:14",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.28/InvoiceExtractor.exe",
-      "sha256": "2a42560d63617ea956e37914d20fc976461d1a9fe33dd559f11437d49de2513c"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.29/InvoiceExtractor.exe",
+      "sha256": "e6aa4e276c993ec447b86dc0551ba9066c488e86c8eb822257aa0b46e8657a81"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.28/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.29/app-vendors.csv",
       "sha256": "599a03f38379aae31a6181f13a125982c3356bb6e5c67bf712c606a0c5faf9f2"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.28/update-InvoiceExtractorUpdater.exe",
-      "sha256": "c3d34bdfb09f4b10cb42bf20c49f10f69a0084483ac3ca2f430b9af32e135e01"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.29/update-InvoiceExtractorUpdater.exe",
+      "sha256": "d1436f97ad976dafda5f0a44026869bb63d1b0fd4e6cdaeb27ab78eb27d6f680"
     }
   ]
 }
