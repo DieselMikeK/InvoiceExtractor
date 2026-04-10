@@ -1,4 +1,4 @@
-﻿{
-    "notes":  "Preserve stock-order purple highlighting when duplicate flags are applied, and detect Holley/Fleece stock orders from internal ship-to customers.",
-    "requested_at":  "2026-04-10T17:12:28.0429604Z"
+{
+  "notes": "add the word \"test\" underneath the status",
+  "requested_at": "2026-04-10T17:57:26+00:00"
 }
