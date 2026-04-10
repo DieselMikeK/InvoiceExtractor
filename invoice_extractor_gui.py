@@ -235,7 +235,6 @@ def load_vendor_aliases(preferred_dir):
 def _get_status_messages(required_dir, ocr_available=OCR_AVAILABLE):
     messages = [
         {'text': "Connected", 'foreground': 'green'},
-        {'text': "test"},
     ]
     cred_exists = os.path.exists(os.path.join(required_dir, 'client_secret.json'))
     token_exists = os.path.exists(os.path.join(required_dir, 'token.pickle'))

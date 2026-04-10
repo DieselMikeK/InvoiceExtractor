@@ -129,19 +129,16 @@ class GmailTodayTimeQueryTests(unittest.TestCase):
 
 
 class StatusMessageTests(unittest.TestCase):
-    def test_places_test_immediately_below_connected(self):
+    def test_does_not_include_extra_test_status_line(self):
         missing_required_dir = os.path.join(
             os.getcwd(),
             '__missing_required_dir_for_status_test__',
         )
         messages = _get_status_messages(missing_required_dir, ocr_available=True)
 
-        self.assertEqual(
-            [message['text'] for message in messages[:2]],
-            ['Connected', 'test'],
-        )
+        self.assertEqual(messages[0]['text'], 'Connected')
         self.assertEqual(messages[0]['foreground'], 'green')
-        self.assertNotIn('foreground', messages[1])
+        self.assertNotIn('test', [message['text'] for message in messages])
 
 
 class DuplicateHighlightTests(unittest.TestCase):
