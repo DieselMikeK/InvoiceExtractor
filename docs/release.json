@@ -1,24 +1,24 @@
 {
-  "version": "1.2.30",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.30/InvoiceExtractor.exe",
-  "sha256": "dd30acbe7720dbcd30bf5f71b2aa79ccdcf613567bf7682bfdb6323e5f4757f9",
-  "notes": "remove the word \"test\" in the status area",
-  "published_at": "04/10/2026 18:20:06",
+  "version": "1.2.31",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.31/InvoiceExtractor.exe",
+  "sha256": "4551b2a66f924decccc78bfcf21616cffa21f909ec231583a57067b6094788e4",
+  "notes": "Add first-pass parsing and vendor fallback support for Power Stroke Products, Hamilton Cams, Bosch, Beans Diesel, Diesel Forward, Carli, Icon, and Cognito invoices.",
+  "published_at": "04/15/2026 17:17:15",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.30/InvoiceExtractor.exe",
-      "sha256": "dd30acbe7720dbcd30bf5f71b2aa79ccdcf613567bf7682bfdb6323e5f4757f9"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.31/InvoiceExtractor.exe",
+      "sha256": "4551b2a66f924decccc78bfcf21616cffa21f909ec231583a57067b6094788e4"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.30/app-vendors.csv",
-      "sha256": "599a03f38379aae31a6181f13a125982c3356bb6e5c67bf712c606a0c5faf9f2"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.31/app-vendors.csv",
+      "sha256": "f7e07ac925114cf2d0679049a1ae885f7f2f89248f1f2893157e9d41b3cf5cb0"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.30/update-InvoiceExtractorUpdater.exe",
-      "sha256": "f97f1a918a8cd64e493c1c767969c49b78aeeebadcdc9debc314aebf90d54e0a"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.31/update-InvoiceExtractorUpdater.exe",
+      "sha256": "e10b389ebc1834d706297ec074023909f62d7d461d0529c67d3a6d0ff82037cb"
     }
   ]
 }
