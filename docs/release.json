@@ -1,24 +1,24 @@
 {
-  "version": "1.2.31",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.31/InvoiceExtractor.exe",
-  "sha256": "4551b2a66f924decccc78bfcf21616cffa21f909ec231583a57067b6094788e4",
-  "notes": "Add first-pass parsing and vendor fallback support for Power Stroke Products, Hamilton Cams, Bosch, Beans Diesel, Diesel Forward, Carli, Icon, and Cognito invoices.",
-  "published_at": "04/15/2026 17:17:15",
+  "version": "1.2.32",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.32/InvoiceExtractor.exe",
+  "sha256": "246f06f050b2fc33a626f922a92637ff567fef713ece871ed7cd7b0dfd74c45c",
+  "notes": "I just want you to check if you can download these into the right project folder",
+  "published_at": "04/16/2026 00:35:15",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.31/InvoiceExtractor.exe",
-      "sha256": "4551b2a66f924decccc78bfcf21616cffa21f909ec231583a57067b6094788e4"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.32/InvoiceExtractor.exe",
+      "sha256": "246f06f050b2fc33a626f922a92637ff567fef713ece871ed7cd7b0dfd74c45c"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.31/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.32/app-vendors.csv",
       "sha256": "f7e07ac925114cf2d0679049a1ae885f7f2f89248f1f2893157e9d41b3cf5cb0"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.31/update-InvoiceExtractorUpdater.exe",
-      "sha256": "e10b389ebc1834d706297ec074023909f62d7d461d0529c67d3a6d0ff82037cb"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.32/update-InvoiceExtractorUpdater.exe",
+      "sha256": "613a9a1e47a3798c6c539d41c1c7aa2b8aeeb4d8a00865e831221e3c18388a85"
     }
   ]
 }
