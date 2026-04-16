@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Add explicit From and To time bounds to the date range Gmail filter so date-range downloads can be limited to specific times on each day.",
-    "requested_at":  "2026-04-16T23:24:42.9393506Z"
+    "notes":  "Keep the date-range filter controls on one line with inline time placeholders, fix the overlapping All from Today UI, and reapply Carli shared-sender vendor parsing before invoice prevalidation.",
+    "requested_at":  "2026-04-16T23:41:59.2338551Z"
 }
