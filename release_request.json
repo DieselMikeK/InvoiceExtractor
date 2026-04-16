@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Confirm Carli invoices from the shared suspension.randysww.com sender by reading the forwarded subject instead of trusting the sender address alone.",
-    "requested_at":  "2026-04-16T19:42:23.5266238Z"
+    "notes":  "Stop trusting the shared suspension.randysww.com sender by itself. Confirm Carli from the forwarded subject and Daystar from the forwarded email body address.",
+    "requested_at":  "2026-04-16T19:51:46.6593321Z"
 }
