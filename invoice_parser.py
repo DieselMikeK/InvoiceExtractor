@@ -4528,6 +4528,26 @@ def _extract_carli_items_from_layout(filepath):
             return 'DROP SHIP', ' '.join(words[2:]).strip()
         return words[0], ' '.join(words[1:]).strip()
 
+    def _normalize_carli_drop_ship_item(item):
+        if not item:
+            return item
+        combined = ' '.join(
+            part for part in (
+                str(item.get('item_number', '')).strip(),
+                str(item.get('description', '')).strip(),
+            )
+            if part
+        )
+        if not re.search(r'\bdrop\s+ship\b', combined, re.IGNORECASE):
+            return item
+        item['description'] = 'Drop Ship'
+        return _apply_export_overrides(
+            item,
+            row_type='Category Details',
+            category='Purchases',
+            product_service='Drop Ship',
+        )
+
     for raw_line in lines[header_idx + 1:]:
         stripped = raw_line.strip()
         if not stripped:
@@ -4559,6 +4579,7 @@ def _extract_carli_items_from_layout(filepath):
                     'amount': amount,
                 }
                 current_item = mark_freight_item(current_item)
+                current_item = _normalize_carli_drop_ship_item(current_item)
                 items.append(current_item)
                 continue
 
