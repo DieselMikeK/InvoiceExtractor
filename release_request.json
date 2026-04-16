@@ -1,4 +1,4 @@
-{
-  "notes": "Carli needs Category Detail added with Drop Ship as the description.",
-  "requested_at": "2026-04-16T20:51:01+00:00"
+﻿{
+    "notes":  "Fix stale sender metadata so older invoice sidecars can pick up richer cached email body text for shared-sender vendor detection such as Carli.",
+    "requested_at":  "2026-04-16T23:16:53.1000388Z"
 }
