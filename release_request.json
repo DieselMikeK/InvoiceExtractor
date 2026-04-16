@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Recognize Carli invoices sent from carli@suspension.randysww.com.",
-    "requested_at":  "2026-04-16T19:18:23.5001874Z"
+    "notes":  "Match Carli sender emails by @suspension.randysww.com so noreply and other mailbox variants are recognized.",
+    "requested_at":  "2026-04-16T19:28:24.4776442Z"
 }
