@@ -393,6 +393,9 @@ def _infer_vendor_from_shared_sender_content(sender_email='', sender_header='', 
         re.IGNORECASE,
     ):
         return 'Carli Suspension - $10 DS Fee'
+    body_vendor = _find_vendor_in_text(message_value)
+    if body_vendor:
+        return normalize_vendor_name(body_vendor)
     body_vendor = _find_vendor_by_address_alias(message_value)
     if body_vendor:
         return normalize_vendor_name(body_vendor)

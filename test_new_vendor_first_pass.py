@@ -68,6 +68,24 @@ class NewVendorFirstPassTests(unittest.TestCase):
             'Daystar',
         )
 
+    def test_carli_shared_sender_domain_uses_full_email_body(self):
+        carli_body = (
+            'Thanks for your order.\n'
+            'The invoice is attached.\n'
+            'Sincerely,\n'
+            'Carli\n'
+        )
+
+        self.assertEqual(
+            infer_vendor_from_email_metadata(
+                sender_email='noreply@suspension.randysww.com',
+                sender_header='',
+                subject='Fwd: invoice attached',
+                message_text=carli_body,
+            ),
+            'Carli Suspension - $10 DS Fee',
+        )
+
     def test_power_stroke_products_credit_card_and_will_call(self):
         stock_path = os.path.join(TRAINING_DIR, 'PS', 'Invoice_10513_from_PowerStroke_Products.pdf')
         retail_path = os.path.join(TRAINING_DIR, 'PS', 'Invoice_10488_from_PowerStroke_Products.pdf')
