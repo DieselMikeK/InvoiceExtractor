@@ -1,24 +1,24 @@
 {
-  "version": "1.2.40",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.40/InvoiceExtractor.exe",
-  "sha256": "c82a6bd02ba32ce4bbf1b47ff997af4dab1474acf2abb9e1eaefcfe48872f8b5",
-  "notes": "Add explicit From and To time bounds to the date range Gmail filter so date-range downloads can be limited to specific times on each day.",
-  "published_at": "04/16/2026 23:26:52",
+  "version": "1.2.41",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.41/InvoiceExtractor.exe",
+  "sha256": "09956e57474b9a979a979f3ebafc809e7a479336663bd016702b089369435f02",
+  "notes": "Keep the date-range filter controls on one line with inline time placeholders, fix the overlapping All from Today UI, and reapply Carli shared-sender vendor parsing before invoice prevalidation.",
+  "published_at": "04/16/2026 23:44:44",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.40/InvoiceExtractor.exe",
-      "sha256": "c82a6bd02ba32ce4bbf1b47ff997af4dab1474acf2abb9e1eaefcfe48872f8b5"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.41/InvoiceExtractor.exe",
+      "sha256": "09956e57474b9a979a979f3ebafc809e7a479336663bd016702b089369435f02"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.40/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.41/app-vendors.csv",
       "sha256": "c7f6c6962bd528ccdd5a9807e6d19710701f3583637ccc904d823b7dd8cee8f1"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.40/update-InvoiceExtractorUpdater.exe",
-      "sha256": "0d1f9ff5da1a65255371ce5215ee559db2bb19e8be03fd98d1e21d3dbce6bded"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.41/update-InvoiceExtractorUpdater.exe",
+      "sha256": "e5ace763a1c5889ffc5cd74caa8cf6b1070d410aff7c483a7048f14f8190aa3c"
     }
   ]
 }
