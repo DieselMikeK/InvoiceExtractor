@@ -1,24 +1,24 @@
 {
-  "version": "1.2.38",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.38/InvoiceExtractor.exe",
-  "sha256": "eae0b247e5efe18740de985cf957bc68bf0255161efffba5c7b4e08965d9907a",
-  "notes": "Carli needs Category Detail added with Drop Ship as the description.",
-  "published_at": "04/16/2026 20:56:05",
+  "version": "1.2.39",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.39/InvoiceExtractor.exe",
+  "sha256": "b3f23f8a01cc789a13231dca0382c027909f41553278945a171d10ec94c18563",
+  "notes": "Fix stale sender metadata so older invoice sidecars can pick up richer cached email body text for shared-sender vendor detection such as Carli.",
+  "published_at": "04/16/2026 23:18:46",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.38/InvoiceExtractor.exe",
-      "sha256": "eae0b247e5efe18740de985cf957bc68bf0255161efffba5c7b4e08965d9907a"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.39/InvoiceExtractor.exe",
+      "sha256": "b3f23f8a01cc789a13231dca0382c027909f41553278945a171d10ec94c18563"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.38/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.39/app-vendors.csv",
       "sha256": "c7f6c6962bd528ccdd5a9807e6d19710701f3583637ccc904d823b7dd8cee8f1"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.38/update-InvoiceExtractorUpdater.exe",
-      "sha256": "c785e42e5280c2ded21c794ca89f31130262ccc1806b329b5945187360266953"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.39/update-InvoiceExtractorUpdater.exe",
+      "sha256": "95fa754ecd63db3049358c6edc794c62f3ad46785e204323da55d7e2782e103b"
     }
   ]
 }
