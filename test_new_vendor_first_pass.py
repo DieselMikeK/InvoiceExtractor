@@ -12,6 +12,7 @@ class NewVendorFirstPassTests(unittest.TestCase):
     def test_sender_aliases_cover_carli_hamilton_and_icon(self):
         cases = [
             ('sales@carlisuspension.com', '', 'Carli Suspension - $10 DS Fee'),
+            ('carli@suspension.randysww.com', '', 'Carli Suspension - $10 DS Fee'),
             ('hamiltoncamsales@gmail.com', '', 'Hamilton Cams - $20 Dropship Fee'),
             ('', 'ICON Vehicle Dynamics <orders@iconvehicledynamics.com>', 'Icon Vehicle Dynamics'),
         ]
