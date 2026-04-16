@@ -3,10 +3,23 @@ import tempfile
 import unittest
 import base64
 
-from gmail_client import GmailClient
+from gmail_client import GmailClient, _message_matches_time_filter
 
 
 class GmailClientDownloadTests(unittest.TestCase):
+    def test_message_time_filter_allows_open_ended_ranges(self):
+        message = {'internalDate': '1712520000000'}
+
+        self.assertTrue(
+            _message_matches_time_filter(message, {'start_ts': 1712510000, 'end_ts': None})
+        )
+        self.assertTrue(
+            _message_matches_time_filter(message, {'start_ts': None, 'end_ts': 1712523600})
+        )
+        self.assertFalse(
+            _message_matches_time_filter(message, {'start_ts': 1712523600, 'end_ts': None})
+        )
+
     def test_labels_only_after_all_attachments_download(self):
         stop_state = {'stop': False}
 

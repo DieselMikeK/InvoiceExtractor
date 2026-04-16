@@ -222,12 +222,18 @@ def _message_matches_time_filter(message, message_time_filter):
         return False
 
     try:
-        start_ts = int(message_time_filter.get('start_ts', 0))
-        end_ts = int(message_time_filter.get('end_ts', 0))
+        start_raw = message_time_filter.get('start_ts')
+        end_raw = message_time_filter.get('end_ts')
+        start_ts = int(start_raw) if start_raw is not None else None
+        end_ts = int(end_raw) if end_raw is not None else None
     except (AttributeError, TypeError, ValueError):
         return False
 
-    return start_ts <= timestamp < end_ts
+    if start_ts is not None and timestamp < start_ts:
+        return False
+    if end_ts is not None and timestamp >= end_ts:
+        return False
+    return True
 
 
 class GmailClient:

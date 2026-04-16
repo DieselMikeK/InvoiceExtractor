@@ -484,6 +484,90 @@ def _build_today_time_filter(boundary_value, direction, reference_dt=None):
     }
 
 
+def _build_timestamp_query(time_filter):
+    """Build a Gmail query string from absolute timestamp bounds."""
+    if not isinstance(time_filter, dict):
+        return ''
+    parts = []
+    start_ts = time_filter.get('start_ts')
+    end_ts = time_filter.get('end_ts')
+    if start_ts is not None:
+        parts.append(f"after:{int(start_ts)}")
+    if end_ts is not None:
+        parts.append(f"before:{int(end_ts)}")
+    return " ".join(parts)
+
+
+def _build_date_range_time_filter(
+    from_date,
+    to_date,
+    from_time_value='',
+    to_time_value='',
+    reference_dt=None,
+):
+    """Build an absolute Gmail timestamp window for the date-range filter."""
+    if from_date is None and to_date is None:
+        raise ValueError("Date range filter requires at least one date.")
+
+    from_time_raw = str(from_time_value or '').strip()
+    to_time_raw = str(to_time_value or '').strip()
+    if from_time_raw and from_date is None:
+        raise ValueError("Provide a From date when setting a From time.")
+    if to_time_raw and to_date is None:
+        raise ValueError("Provide a To date when setting a To time.")
+
+    from_time = _parse_time_input(from_time_raw) if from_time_raw else None
+    to_time = _parse_time_input(to_time_raw) if to_time_raw else None
+    if from_time_raw and from_time is None:
+        raise ValueError("Invalid From time. Use HH:MM or H:MM AM/PM.")
+    if to_time_raw and to_time is None:
+        raise ValueError("Invalid To time. Use HH:MM or H:MM AM/PM.")
+
+    now = reference_dt or datetime.now().astimezone()
+    if now.tzinfo is None:
+        now = now.astimezone()
+    tzinfo = now.tzinfo
+
+    start_ts = None
+    end_ts = None
+    if from_date is not None:
+        start_dt = datetime.combine(from_date, from_time or dt_time.min, tzinfo=tzinfo)
+        start_ts = int(start_dt.timestamp())
+    if to_date is not None:
+        if to_time is None:
+            end_dt = datetime.combine(to_date + timedelta(days=1), dt_time.min, tzinfo=tzinfo)
+        else:
+            # Treat the chosen minute as inclusive by using the next minute as the exclusive bound.
+            end_dt = datetime.combine(to_date, to_time, tzinfo=tzinfo) + timedelta(minutes=1)
+        end_ts = int(end_dt.timestamp())
+
+    if start_ts is not None and end_ts is not None and start_ts >= end_ts:
+        raise ValueError("From date/time must be before To date/time.")
+
+    return {
+        'start_ts': start_ts,
+        'end_ts': end_ts,
+    }
+
+
+def _build_date_range_time_query(
+    from_date,
+    to_date,
+    from_time_value='',
+    to_time_value='',
+    reference_dt=None,
+):
+    """Build a Gmail query string for the date-range filter."""
+    time_filter = _build_date_range_time_filter(
+        from_date,
+        to_date,
+        from_time_value=from_time_value,
+        to_time_value=to_time_value,
+        reference_dt=reference_dt,
+    )
+    return _build_timestamp_query(time_filter)
+
+
 def _format_time_value(value):
     """Format a time-of-day value for display in the UI."""
     if value is None:
@@ -1418,7 +1502,10 @@ class InvoiceExtractorGUI:
             return ''
         return self.today_time_value_var.get().strip()
 
-    def _open_time_picker_at(self, target_var, anchor_widget, title=None):
+    def _get_range_time_filter_value(self, target_var):
+        return str(target_var.get() or '').strip()
+
+    def _open_time_picker_at(self, target_var, anchor_widget, title=None, current_value=None, set_value=None):
         if getattr(self, '_time_picker_open', False):
             return "break"
         if time.time() < getattr(self, '_time_picker_suppress_until', 0):
@@ -1430,7 +1517,10 @@ class InvoiceExtractorGUI:
         top.transient(self.root)
         top.grab_set()
 
-        existing = _parse_time_input(self._get_today_time_filter_value())
+        existing_text = current_value
+        if existing_text is None:
+            existing_text = str(target_var.get() or '').strip()
+        existing = _parse_time_input(existing_text)
         if existing is None:
             now_local = datetime.now().astimezone().time().replace(second=0, microsecond=0)
             existing = dt_time(now_local.hour, now_local.minute)
@@ -1498,7 +1588,11 @@ class InvoiceExtractorGUI:
             if selected_am_pm == 'PM':
                 hour_24 += 12
             selected_time = dt_time(hour_24, selected_minute)
-            self._set_today_time_display_value(_format_time_value(selected_time))
+            formatted_value = _format_time_value(selected_time)
+            if set_value is not None:
+                set_value(formatted_value)
+            else:
+                target_var.set(formatted_value)
             _close()
 
         btn_frame = ttk.Frame(top)
@@ -1557,6 +1651,8 @@ class InvoiceExtractorGUI:
         if self.date_filter_var.get():
             from_raw = self.date_from_var.get().strip()
             to_raw = self.date_to_var.get().strip()
+            from_time_raw = self._get_range_time_filter_value(self.date_from_time_var)
+            to_time_raw = self._get_range_time_filter_value(self.date_to_time_var)
             if not from_raw and not to_raw:
                 self.log("Date filter is enabled but no dates were provided.", "error")
                 return None, None, None
@@ -1568,17 +1664,18 @@ class InvoiceExtractorGUI:
             if to_raw and not to_date:
                 self.log("Invalid To date. Use YYYY/MM/DD.", "error")
                 return None, None, None
-            if from_date and to_date and from_date > to_date:
-                self.log("From date must be on or before To date.", "error")
+            try:
+                message_time_filter = _build_date_range_time_filter(
+                    from_date,
+                    to_date,
+                    from_time_value=from_time_raw,
+                    to_time_value=to_time_raw,
+                )
+                query = _build_timestamp_query(message_time_filter)
+            except ValueError as exc:
+                self.log(str(exc), "error")
                 return None, None, None
-
-            parts = []
-            if from_date:
-                parts.append(f"after:{from_date.strftime('%Y/%m/%d')}")
-            if to_date:
-                inclusive_before = to_date + timedelta(days=1)
-                parts.append(f"before:{inclusive_before.strftime('%Y/%m/%d')}")
-            return " ".join(parts), "range", message_time_filter
+            return query, "range", message_time_filter
 
         return f"-label:{PROCESSED_LABEL_NAME}", "label", message_time_filter
 
@@ -1589,6 +1686,10 @@ class InvoiceExtractorGUI:
             self.date_from_entry.config(state=state)
         if hasattr(self, 'date_to_entry'):
             self.date_to_entry.config(state=state)
+        if hasattr(self, 'date_from_time_entry'):
+            self.date_from_time_entry.config(state='readonly' if enabled else tk.DISABLED)
+        if hasattr(self, 'date_to_time_entry'):
+            self.date_to_time_entry.config(state='readonly' if enabled else tk.DISABLED)
         time_enabled = self.today_time_filter_var.get()
         combo_state = 'readonly' if time_enabled else 'disabled'
         if hasattr(self, 'today_time_mode_combo'):
@@ -1736,6 +1837,8 @@ class InvoiceExtractorGUI:
         self.today_time_value_var = tk.StringVar()
         self.date_from_var = tk.StringVar()
         self.date_to_var = tk.StringVar()
+        self.date_from_time_var = tk.StringVar()
+        self.date_to_time_var = tk.StringVar()
 
         self.date_filter_check = ttk.Checkbutton(
             filter_frame,
@@ -1763,8 +1866,68 @@ class InvoiceExtractorGUI:
             )
         )
 
+        ttk.Label(filter_frame, text="From Time").grid(row=1, column=1, padx=(10, 2), pady=(4, 0))
+        self.date_from_time_entry = tk.Entry(
+            filter_frame,
+            textvariable=self.date_from_time_var,
+            width=12,
+            relief=tk.SUNKEN,
+            bd=1,
+            readonlybackground='white',
+            disabledbackground='#f0f0f0',
+        )
+        self.date_from_time_entry.grid(row=1, column=2, padx=(0, 10), pady=(4, 0))
+        self.date_from_time_entry.bind(
+            "<FocusIn>",
+            lambda _e: self._open_time_picker_at(
+                self.date_from_time_var,
+                self.date_from_time_entry,
+                "Select FROM Time",
+                current_value=self._get_range_time_filter_value(self.date_from_time_var),
+            )
+        )
+        self.date_from_time_entry.bind(
+            "<Button-1>",
+            lambda _e: self._open_time_picker_at(
+                self.date_from_time_var,
+                self.date_from_time_entry,
+                "Select FROM Time",
+                current_value=self._get_range_time_filter_value(self.date_from_time_var),
+            )
+        )
+
+        ttk.Label(filter_frame, text="To Time").grid(row=1, column=3, padx=(0, 2), pady=(4, 0))
+        self.date_to_time_entry = tk.Entry(
+            filter_frame,
+            textvariable=self.date_to_time_var,
+            width=12,
+            relief=tk.SUNKEN,
+            bd=1,
+            readonlybackground='white',
+            disabledbackground='#f0f0f0',
+        )
+        self.date_to_time_entry.grid(row=1, column=4, pady=(4, 0))
+        self.date_to_time_entry.bind(
+            "<FocusIn>",
+            lambda _e: self._open_time_picker_at(
+                self.date_to_time_var,
+                self.date_to_time_entry,
+                "Select TO Time",
+                current_value=self._get_range_time_filter_value(self.date_to_time_var),
+            )
+        )
+        self.date_to_time_entry.bind(
+            "<Button-1>",
+            lambda _e: self._open_time_picker_at(
+                self.date_to_time_var,
+                self.date_to_time_entry,
+                "Select TO Time",
+                current_value=self._get_range_time_filter_value(self.date_to_time_var),
+            )
+        )
+
         today_time_row = ttk.Frame(filter_frame)
-        today_time_row.grid(row=1, column=0, columnspan=5, sticky='w', pady=(4, 0))
+        today_time_row.grid(row=2, column=0, columnspan=5, sticky='w', pady=(4, 0))
 
         self.today_time_filter_check = ttk.Checkbutton(
             today_time_row,
@@ -1801,6 +1964,8 @@ class InvoiceExtractorGUI:
                 self.today_time_value_var,
                 self.today_time_entry,
                 "Select Time of Day",
+                current_value=self._get_today_time_filter_value(),
+                set_value=self._set_today_time_display_value,
             )
         )
         self.today_time_entry.bind(
@@ -1809,6 +1974,8 @@ class InvoiceExtractorGUI:
                 self.today_time_value_var,
                 self.today_time_entry,
                 "Select Time of Day",
+                current_value=self._get_today_time_filter_value(),
+                set_value=self._set_today_time_display_value,
             )
         )
         self._set_today_time_placeholder()

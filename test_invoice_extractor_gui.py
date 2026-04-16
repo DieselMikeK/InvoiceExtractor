@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from openpyxl import load_workbook
 
 from invoice_extractor_gui import (
+    _build_date_range_time_filter,
+    _build_date_range_time_query,
     InvoiceExtractorGUI,
     _build_today_time_query,
     _cell_fill_rgb,
@@ -184,6 +186,59 @@ class GmailTodayTimeQueryTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             _build_today_time_query('bad-time', 'Before', reference)
+
+
+class GmailDateRangeTimeQueryTests(unittest.TestCase):
+    def test_build_date_range_time_query_uses_explicit_bounds(self):
+        reference = datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)
+
+        query = _build_date_range_time_query(
+            datetime(2026, 4, 7, tzinfo=timezone.utc).date(),
+            datetime(2026, 4, 8, tzinfo=timezone.utc).date(),
+            from_time_value='9:15 AM',
+            to_time_value='2:45 PM',
+            reference_dt=reference,
+        )
+
+        expected_start = int(datetime(2026, 4, 7, 9, 15, tzinfo=timezone.utc).timestamp())
+        expected_end = int(datetime(2026, 4, 8, 14, 46, tzinfo=timezone.utc).timestamp())
+        self.assertEqual(query, f"after:{expected_start} before:{expected_end}")
+
+    def test_build_date_range_time_filter_defaults_to_whole_day_when_times_blank(self):
+        reference = datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)
+
+        time_filter = _build_date_range_time_filter(
+            datetime(2026, 4, 7, tzinfo=timezone.utc).date(),
+            datetime(2026, 4, 7, tzinfo=timezone.utc).date(),
+            reference_dt=reference,
+        )
+
+        expected_start = int(datetime(2026, 4, 7, 0, 0, tzinfo=timezone.utc).timestamp())
+        expected_end = int(datetime(2026, 4, 8, 0, 0, tzinfo=timezone.utc).timestamp())
+        self.assertEqual(time_filter, {'start_ts': expected_start, 'end_ts': expected_end})
+
+    def test_build_date_range_time_filter_rejects_reversed_datetime_bounds(self):
+        reference = datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)
+
+        with self.assertRaises(ValueError):
+            _build_date_range_time_filter(
+                datetime(2026, 4, 8, tzinfo=timezone.utc).date(),
+                datetime(2026, 4, 8, tzinfo=timezone.utc).date(),
+                from_time_value='3:00 PM',
+                to_time_value='2:00 PM',
+                reference_dt=reference,
+            )
+
+    def test_build_date_range_time_filter_rejects_time_without_matching_date(self):
+        reference = datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)
+
+        with self.assertRaises(ValueError):
+            _build_date_range_time_filter(
+                None,
+                datetime(2026, 4, 8, tzinfo=timezone.utc).date(),
+                from_time_value='3:00 PM',
+                reference_dt=reference,
+            )
 
 
 class StatusMessageTests(unittest.TestCase):
