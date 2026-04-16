@@ -377,6 +377,34 @@ def infer_vendor_from_sender(sender_email='', sender_header=''):
     return ''
 
 
+def _infer_vendor_from_shared_sender_subject(sender_email='', sender_header='', subject=''):
+    """Resolve vendors that share a sender mailbox by confirming the subject text."""
+    email_value = _extract_sender_email(sender_email or sender_header)
+    subject_value = str(subject or '').strip()
+    if not email_value or not subject_value:
+        return ''
+    if email_value.endswith('@suspension.randysww.com'):
+        if re.search(r'\bcarli\s+suspension\b', subject_value, re.IGNORECASE) and re.search(
+            r'\binvoice',
+            subject_value,
+            re.IGNORECASE,
+        ):
+            return 'Carli Suspension - $10 DS Fee'
+    return ''
+
+
+def infer_vendor_from_email_metadata(sender_email='', sender_header='', subject=''):
+    """Infer a vendor from sender metadata plus subject-based confirmations when needed."""
+    subject_vendor = _infer_vendor_from_shared_sender_subject(
+        sender_email=sender_email,
+        sender_header=sender_header,
+        subject=subject,
+    )
+    if subject_vendor:
+        return subject_vendor
+    return infer_vendor_from_sender(sender_email=sender_email, sender_header=sender_header)
+
+
 def infer_vendor_from_folder_marker(filepath):
     """Infer vendor from a training-folder marker file when present."""
     if not filepath:
@@ -6600,7 +6628,7 @@ def parse_invoice_text(text, filepath=None):
     return data
 
 
-def parse_invoice(filepath, status_callback=None, sender_email='', sender_header=''):
+def parse_invoice(filepath, status_callback=None, sender_email='', sender_header='', sender_subject=''):
     """Parse a single invoice file and return structured data.
 
     Args:
@@ -6694,9 +6722,10 @@ def parse_invoice(filepath, status_callback=None, sender_email='', sender_header
             )
             data['vendor'] = normalized_folder_vendor
 
-    sender_vendor = infer_vendor_from_sender(
+    sender_vendor = infer_vendor_from_email_metadata(
         sender_email=sender_email,
         sender_header=sender_header,
+        subject=sender_subject,
     )
     if sender_vendor and not folder_vendor:
         normalized_sender_vendor = normalize_vendor_name(sender_vendor)

@@ -93,8 +93,8 @@ class GmailClientDownloadTests(unittest.TestCase):
             "---------- Forwarded message ---------\n"
             "From: KC Turbos Invoicing (invoicing@kcturbos.com) "
             "<system@sent-via.netsuite.com>\n"
+            "Subject: KC Turbos Invoice(s) Attached\n"
             "Date: Tue, Apr 7, 2026 at 9:00 AM\n"
-            "Subject: Invoice\n"
             "To: Accounts Payable <ap@dieselpowerproducts.com>\n"
         )
         encoded_body = base64.urlsafe_b64encode(
@@ -147,6 +147,7 @@ class GmailClientDownloadTests(unittest.TestCase):
         self.assertEqual(len(downloaded), 1)
         self.assertEqual(downloaded[0]['sender_email'], 'invoicing@kcturbos.com')
         self.assertIn('KC Turbos Invoicing', downloaded[0]['sender_header'])
+        self.assertEqual(downloaded[0]['subject'], 'KC Turbos Invoice(s) Attached')
 
     def test_message_time_filter_skips_messages_outside_requested_window(self):
         with tempfile.TemporaryDirectory() as tmpdir:

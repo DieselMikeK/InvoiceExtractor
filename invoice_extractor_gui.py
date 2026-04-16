@@ -2234,6 +2234,7 @@ class InvoiceExtractorGUI:
                             self.log,
                             sender_email=sender_entry.get('sender_email', ''),
                             sender_header=sender_entry.get('sender_header', ''),
+                            sender_subject=sender_entry.get('subject', ''),
                         )
 
                         if invoice_data and invoice_data.get('not_an_invoice'):

@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from invoice_parser import infer_vendor_from_sender, parse_invoice
+from invoice_parser import infer_vendor_from_email_metadata, infer_vendor_from_sender, parse_invoice
 
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -12,7 +12,6 @@ class NewVendorFirstPassTests(unittest.TestCase):
     def test_sender_aliases_cover_carli_hamilton_and_icon(self):
         cases = [
             ('sales@carlisuspension.com', '', 'Carli Suspension - $10 DS Fee'),
-            ('noreply@suspension.randysww.com', '', 'Carli Suspension - $10 DS Fee'),
             ('hamiltoncamsales@gmail.com', '', 'Hamilton Cams - $20 Dropship Fee'),
             ('', 'ICON Vehicle Dynamics <orders@iconvehicledynamics.com>', 'Icon Vehicle Dynamics'),
         ]
@@ -23,6 +22,33 @@ class NewVendorFirstPassTests(unittest.TestCase):
                     infer_vendor_from_sender(sender_email=sender_email, sender_header=sender_header),
                     expected_vendor,
                 )
+
+    def test_carli_shared_sender_domain_requires_subject_confirmation(self):
+        carli_subject = (
+            'Fwd: ***DO NOT REPLY***Carli Suspension Invoice(s) Attached '
+            '( Invoice# 122303 0002000266 )'
+        )
+
+        self.assertEqual(
+            infer_vendor_from_sender(sender_email='noreply@suspension.randysww.com', sender_header=''),
+            '',
+        )
+        self.assertEqual(
+            infer_vendor_from_email_metadata(
+                sender_email='noreply@suspension.randysww.com',
+                sender_header='',
+                subject=carli_subject,
+            ),
+            'Carli Suspension - $10 DS Fee',
+        )
+        self.assertEqual(
+            infer_vendor_from_email_metadata(
+                sender_email='noreply@suspension.randysww.com',
+                sender_header='',
+                subject='Fwd: ***DO NOT REPLY***Shared vendor invoice attached',
+            ),
+            '',
+        )
 
     def test_power_stroke_products_credit_card_and_will_call(self):
         stock_path = os.path.join(TRAINING_DIR, 'PS', 'Invoice_10513_from_PowerStroke_Products.pdf')

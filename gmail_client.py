@@ -123,14 +123,14 @@ def _collect_message_text_parts(payload):
     return parts
 
 
-def _extract_forwarded_sender(payload, snippet=''):
-    """Extract the original sender from a forwarded Gmail message body when present."""
+def _extract_forwarded_message_metadata(payload, snippet=''):
+    """Extract original sender and subject from a forwarded Gmail message body."""
     text_chunks = _collect_message_text_parts(payload)
     if snippet:
         text_chunks.append(unescape(str(snippet)))
     combined = '\n'.join(chunk for chunk in text_chunks if chunk).strip()
     if not combined:
-        return '', ''
+        return '', '', ''
 
     lines = [re.sub(r'^\s*>+\s*', '', line).strip() for line in combined.splitlines()]
     marker_indexes = [
@@ -138,12 +138,12 @@ def _extract_forwarded_sender(payload, snippet=''):
         if re.search(r'forwarded message|begin forwarded message', line, re.IGNORECASE)
     ]
     if not marker_indexes:
-        return '', ''
+        return '', '', ''
 
-    for start_idx in marker_indexes:
+    def extract_header_value(start_idx, header_name):
         for idx in range(start_idx + 1, min(start_idx + 20, len(lines))):
             line = lines[idx]
-            match = re.match(r'^From:\s*(.+)$', line, re.IGNORECASE)
+            match = re.match(rf'^{header_name}:\s*(.+)$', line, re.IGNORECASE)
             if not match:
                 continue
 
@@ -152,21 +152,35 @@ def _extract_forwarded_sender(payload, snippet=''):
                 next_line = lines[next_idx].strip()
                 if not next_line:
                     break
-                if re.match(r'^(?:to|cc|bcc|subject|date|reply-to)\s*:', next_line, re.IGNORECASE):
+                if re.match(
+                    r'^(?:to|cc|bcc|subject|date|reply-to|from)\s*:',
+                    next_line,
+                    re.IGNORECASE,
+                ):
                     break
                 if re.match(r'^[A-Za-z][A-Za-z\-]+\s*:', next_line):
                     break
                 header_parts.append(next_line)
 
-            header_value = re.sub(r'\s+', ' ', ' '.join(header_parts)).strip()
-            emails = _extract_email_addresses(header_value)
-            if emails:
-                return emails[0].lower(), header_value
-            parsed = _extract_sender_email(header_value)
-            if parsed:
-                return parsed, header_value
+            return re.sub(r'\s+', ' ', ' '.join(header_parts)).strip()
+        return ''
 
-    return '', ''
+    for start_idx in marker_indexes:
+        sender_header = extract_header_value(start_idx, 'From')
+        subject = extract_header_value(start_idx, 'Subject')
+        if not sender_header and not subject:
+            continue
+
+        sender_email = ''
+        if sender_header:
+            emails = _extract_email_addresses(sender_header)
+            if emails:
+                sender_email = emails[0].lower()
+            else:
+                sender_email = _extract_sender_email(sender_header)
+        return sender_email, sender_header, subject
+
+    return '', '', ''
 
 
 def _message_internal_timestamp(message):
@@ -519,7 +533,11 @@ class GmailClient:
                 from_header = headers.get('From', '')
                 sender_email = _extract_sender_email(from_header)
                 sender_header = from_header
-                forwarded_sender_email, forwarded_sender_header = _extract_forwarded_sender(
+                (
+                    forwarded_sender_email,
+                    forwarded_sender_header,
+                    forwarded_subject,
+                ) = _extract_forwarded_message_metadata(
                     payload,
                     msg.get('snippet', ''),
                 )
@@ -529,6 +547,8 @@ class GmailClient:
                     self.status_callback(
                         f"  Forwarded sender detected: {sender_email}"
                     )
+                if forwarded_subject:
+                    subject = forwarded_subject
 
                 # Find attachments
                 parts = payload.get('parts', [])
