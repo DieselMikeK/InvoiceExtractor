@@ -13,6 +13,7 @@ from invoice_extractor_gui import (
     _get_status_messages,
     _is_diamond_eye_zero_shipping_batch_row,
     _load_sender_sidecar,
+    _merge_sender_metadata_entries,
     _parse_time_input,
     _lookup_sender_metadata_entry,
     _should_preserve_duplicate_row_fill,
@@ -73,6 +74,33 @@ class SenderMetadataLookupTests(unittest.TestCase):
 
         self.assertEqual(entry.get('sender_email'), 'invoicing@kcturbos.com')
 
+    def test_exact_path_entry_is_enriched_by_richer_filename_match(self):
+        entries = {
+            'Invoices/invoices_4-16/Invoice_123.pdf': {
+                'source_file': 'Invoices/invoices_4-16/Invoice_123.pdf',
+                'filename': 'Invoice_123.pdf',
+                'sender_email': 'noreply@suspension.randysww.com',
+                'subject': 'Invoice attached',
+                'message_text': '',
+            },
+            'Invoices/invoices_4-16_2/Invoice_123.pdf': {
+                'source_file': 'Invoices/invoices_4-16_2/Invoice_123.pdf',
+                'filename': 'Invoice_123.pdf',
+                'sender_email': 'noreply@suspension.randysww.com',
+                'subject': 'Invoice attached',
+                'message_text': 'Sincerely,\nCarli Suspension',
+            },
+        }
+
+        entry = _lookup_sender_metadata_entry(
+            entries,
+            'Invoices/invoices_4-16/Invoice_123.pdf',
+            'Invoice_123.pdf',
+        )
+
+        self.assertEqual(entry.get('source_file'), 'Invoices/invoices_4-16/Invoice_123.pdf')
+        self.assertEqual(entry.get('message_text'), 'Sincerely,\nCarli Suspension')
+
     def test_sender_sidecar_round_trip(self):
         entry = {
             'source_file': 'Invoices/Invoice_123.pdf',
@@ -80,6 +108,7 @@ class SenderMetadataLookupTests(unittest.TestCase):
             'sender_email': 'invoicing@kcturbos.com',
             'sender_header': 'KC Turbos <invoicing@kcturbos.com>',
             'subject': 'Invoice attached',
+            'message_text': 'Forwarded message body',
             'message_id': 'abc123',
             'downloaded_at': '2026-04-07 14:00:00',
         }
@@ -93,6 +122,35 @@ class SenderMetadataLookupTests(unittest.TestCase):
 
         self.assertEqual(loaded.get('sender_email'), 'invoicing@kcturbos.com')
         self.assertEqual(loaded.get('message_id'), 'abc123')
+        self.assertEqual(loaded.get('message_text'), 'Forwarded message body')
+
+    def test_merge_sender_metadata_entries_fills_stale_sidecar_fields(self):
+        sidecar_entry = {
+            'source_file': 'Invoices/invoices_4-16/Invoice_123.pdf',
+            'filename': 'Invoice_123.pdf',
+            'sender_email': 'noreply@suspension.randysww.com',
+            'sender_header': '<noreply@suspension.randysww.com>',
+            'subject': 'Invoice attached',
+            'message_text': '',
+            'message_id': 'old-message',
+            'downloaded_at': '2026-04-16 11:52:35',
+        }
+        cached_entry = {
+            'source_file': 'Invoices/invoices_4-16_2/Invoice_123.pdf',
+            'filename': 'Invoice_123.pdf',
+            'sender_email': 'noreply@suspension.randysww.com',
+            'sender_header': '<noreply@suspension.randysww.com>',
+            'subject': 'Invoice attached',
+            'message_text': 'Sincerely,\nCarli Suspension',
+            'message_id': 'new-message',
+            'downloaded_at': '2026-04-16 14:38:36',
+        }
+
+        merged = _merge_sender_metadata_entries(sidecar_entry, cached_entry)
+
+        self.assertEqual(merged.get('source_file'), 'Invoices/invoices_4-16/Invoice_123.pdf')
+        self.assertEqual(merged.get('message_text'), 'Sincerely,\nCarli Suspension')
+        self.assertEqual(merged.get('message_id'), 'old-message')
 
 
 class GmailTodayTimeQueryTests(unittest.TestCase):

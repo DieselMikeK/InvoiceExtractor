@@ -86,21 +86,41 @@ def _lookup_sender_metadata_entry(entries, source_file, filename=''):
         return {}
 
     source_key = str(source_file or '').strip().replace('\\', '/')
-    if source_key and source_key in entries:
-        return entries[source_key]
+    exact_entry = entries.get(source_key, {}) if source_key else {}
 
     filename_key = os.path.basename(str(filename or '')).strip().lower()
     if not filename_key and source_key:
         filename_key = os.path.basename(source_key).strip().lower()
     if not filename_key:
-        return {}
+        return exact_entry
 
     fallback = {}
+    fallback_score = -1
     for entry in entries.values():
         entry_name = os.path.basename(str((entry or {}).get('filename', '') or '')).strip().lower()
         if entry_name == filename_key:
-            fallback = entry
-    return fallback
+            score = sum(
+                1 for key in SENDER_METADATA_FIELDNAMES
+                if str((entry or {}).get(key, '') or '').strip()
+            )
+            if score >= fallback_score:
+                fallback = entry
+                fallback_score = score
+    return _merge_sender_metadata_entries(exact_entry, fallback)
+
+
+def _merge_sender_metadata_entries(*entries):
+    """Merge sender metadata entries, filling blank fields from later entries."""
+    merged = {}
+    for entry in entries:
+        if not entry:
+            continue
+        for key in SENDER_METADATA_FIELDNAMES:
+            current = str(merged.get(key, '') or '').strip()
+            incoming = str((entry or {}).get(key, '') or '').strip()
+            if not current and incoming:
+                merged[key] = incoming
+    return merged
 
 
 def _sender_sidecar_path(filepath):
@@ -2213,13 +2233,24 @@ class InvoiceExtractorGUI:
 
                     try:
                         source_path = _source_file(filename)
-                        sender_entry = _load_sender_sidecar(filepath)
-                        if not sender_entry:
-                            sender_entry = _lookup_sender_metadata_entry(
+                        sender_entry = _merge_sender_metadata_entries(
+                            _load_sender_sidecar(filepath),
+                            _lookup_sender_metadata_entry(
                                 sender_metadata,
                                 source_path,
                                 filename,
-                            )
+                            ),
+                        )
+                        if sender_entry:
+                            try:
+                                existing_sidecar = _load_sender_sidecar(filepath)
+                                if sender_entry != existing_sidecar:
+                                    _save_sender_sidecar(filepath, sender_entry)
+                            except Exception as e:
+                                self.log(
+                                    f"  Warning: could not refresh sender sidecar for {filename} ({e})",
+                                    "warning",
+                                )
                         if sender_entry:
                             sender_ref = str(sender_entry.get('sender_email', '')).strip() or str(
                                 sender_entry.get('sender_header', '')
