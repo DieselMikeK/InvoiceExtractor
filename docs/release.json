@@ -1,24 +1,24 @@
 {
-  "version": "1.2.37",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.37/InvoiceExtractor.exe",
-  "sha256": "cf616f7176bd3def01632ddd1f9015d667921de801b6e8c3438b2440afc8325c",
-  "notes": "For the shared suspension.randysww.com sender, scan the full forwarded email body for Carli clues and continue scanning full invoice text/body for Daystar address matches.",
-  "published_at": "04/16/2026 20:34:41",
+  "version": "1.2.38",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.38/InvoiceExtractor.exe",
+  "sha256": "eae0b247e5efe18740de985cf957bc68bf0255161efffba5c7b4e08965d9907a",
+  "notes": "Carli needs Category Detail added with Drop Ship as the description.",
+  "published_at": "04/16/2026 20:56:05",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.37/InvoiceExtractor.exe",
-      "sha256": "cf616f7176bd3def01632ddd1f9015d667921de801b6e8c3438b2440afc8325c"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.38/InvoiceExtractor.exe",
+      "sha256": "eae0b247e5efe18740de985cf957bc68bf0255161efffba5c7b4e08965d9907a"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.37/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.38/app-vendors.csv",
       "sha256": "c7f6c6962bd528ccdd5a9807e6d19710701f3583637ccc904d823b7dd8cee8f1"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.37/update-InvoiceExtractorUpdater.exe",
-      "sha256": "4d68db57a0efd0eefa62f2a4b4c601483e8dea33a28e1f14947859eeb169b4c8"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.38/update-InvoiceExtractorUpdater.exe",
+      "sha256": "c785e42e5280c2ded21c794ca89f31130262ccc1806b329b5945187360266953"
     }
   ]
 }
