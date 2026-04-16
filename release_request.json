@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Match Carli sender emails by @suspension.randysww.com so noreply and other mailbox variants are recognized.",
-    "requested_at":  "2026-04-16T19:28:24.4776442Z"
+    "notes":  "Confirm Carli invoices from the shared suspension.randysww.com sender by reading the forwarded subject instead of trusting the sender address alone.",
+    "requested_at":  "2026-04-16T19:42:23.5266238Z"
 }
