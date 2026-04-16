@@ -1,24 +1,24 @@
 {
-  "version": "1.2.39",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.39/InvoiceExtractor.exe",
-  "sha256": "b3f23f8a01cc789a13231dca0382c027909f41553278945a171d10ec94c18563",
-  "notes": "Fix stale sender metadata so older invoice sidecars can pick up richer cached email body text for shared-sender vendor detection such as Carli.",
-  "published_at": "04/16/2026 23:18:46",
+  "version": "1.2.40",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.40/InvoiceExtractor.exe",
+  "sha256": "c82a6bd02ba32ce4bbf1b47ff997af4dab1474acf2abb9e1eaefcfe48872f8b5",
+  "notes": "Add explicit From and To time bounds to the date range Gmail filter so date-range downloads can be limited to specific times on each day.",
+  "published_at": "04/16/2026 23:26:52",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.39/InvoiceExtractor.exe",
-      "sha256": "b3f23f8a01cc789a13231dca0382c027909f41553278945a171d10ec94c18563"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.40/InvoiceExtractor.exe",
+      "sha256": "c82a6bd02ba32ce4bbf1b47ff997af4dab1474acf2abb9e1eaefcfe48872f8b5"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.39/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.40/app-vendors.csv",
       "sha256": "c7f6c6962bd528ccdd5a9807e6d19710701f3583637ccc904d823b7dd8cee8f1"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.39/update-InvoiceExtractorUpdater.exe",
-      "sha256": "95fa754ecd63db3049358c6edc794c62f3ad46785e204323da55d7e2782e103b"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.40/update-InvoiceExtractorUpdater.exe",
+      "sha256": "0d1f9ff5da1a65255371ce5215ee559db2bb19e8be03fd98d1e21d3dbce6bded"
     }
   ]
 }
