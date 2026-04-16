@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest import mock
 
 from invoice_parser import infer_vendor_from_email_metadata, infer_vendor_from_sender, parse_invoice
 
@@ -85,6 +86,72 @@ class NewVendorFirstPassTests(unittest.TestCase):
             ),
             'Carli Suspension - $10 DS Fee',
         )
+
+    def test_carli_shared_sender_reapplies_vendor_parser_before_prevalidation(self):
+        mock_pdf = mock.MagicMock()
+        mock_pdf.pages = [object()]
+        mock_context = mock.MagicMock()
+        mock_context.__enter__.return_value = mock_pdf
+        mock_context.__exit__.return_value = False
+        generic_parse = {
+            'invoice_number': '',
+            'vendor': 'Tracking: 1Z351FW60374214427',
+            'vendor_address': '',
+            'customer': '',
+            'date': '',
+            'due_date': '',
+            'terms': '',
+            'po_number': '',
+            'tracking_number': '',
+            'shipping_method': '',
+            'ship_date': '',
+            'shipping_tax_code': '',
+            'shipping_tax_rate': '',
+            'subtotal': '',
+            'shipping_cost': '',
+            'shipping_description': '',
+            'total': '',
+            'line_items': [],
+        }
+        refreshed_parse = {
+            **generic_parse,
+            'vendor': 'Carli Suspension - $10 DS Fee',
+            'invoice_number': '120872',
+            'po_number': '0045969',
+            'customer': 'Cade Grant',
+            'terms': '1% 10 Net 30',
+            'line_items': [
+                {'item_number': 'CS-CA-MS14-94', 'amount': '565.50'},
+                {'item_number': 'DROP SHIP', 'amount': '20.00'},
+            ],
+        }
+
+        with mock.patch('invoice_parser.pdfplumber.open', return_value=mock_context), \
+             mock.patch(
+                 'invoice_parser.extract_text_from_pdf',
+                 return_value='Carli layout text with enough extracted characters to skip OCR fallback.',
+             ), \
+             mock.patch('invoice_parser.parse_invoice_text', return_value=generic_parse), \
+             mock.patch('invoice_parser._refresh_vendor_dependent_fields', return_value=refreshed_parse) as refresh_mock:
+            data = parse_invoice(
+                'C:\\temp\\INVOICE 120872 03_05_26 14_24_14 5.PDF',
+                sender_email='noreply@suspension.randysww.com',
+                sender_subject='Fwd: invoice attached',
+                sender_message_text=(
+                    'Please find attached Invoice# 120872 for your PO# 0045969\n'
+                    'Sincerely,\n'
+                    'Carli Suspension\n'
+                ),
+            )
+
+        self.assertFalse(data.get('not_an_invoice'))
+        self.assertEqual(data.get('vendor'), 'Carli Suspension - $10 DS Fee')
+        self.assertEqual(data.get('invoice_number'), '120872')
+        self.assertEqual(data.get('po_number'), '0045969')
+        self.assertEqual(data.get('customer'), 'Cade Grant')
+        self.assertEqual(data.get('terms'), '1% 10 Net 30')
+        self.assertEqual(len(data.get('line_items') or []), 2)
+        refresh_mock.assert_called_once()
 
     def test_power_stroke_products_credit_card_and_will_call(self):
         stock_path = os.path.join(TRAINING_DIR, 'PS', 'Invoice_10513_from_PowerStroke_Products.pdf')

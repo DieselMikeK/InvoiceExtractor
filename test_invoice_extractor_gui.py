@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from unittest import mock
 
 from openpyxl import load_workbook
 
@@ -239,6 +240,34 @@ class GmailDateRangeTimeQueryTests(unittest.TestCase):
                 from_time_value='3:00 PM',
                 reference_dt=reference,
             )
+
+
+class GmailRangeTimePlaceholderTests(unittest.TestCase):
+    def test_get_range_time_filter_value_ignores_active_placeholder(self):
+        gui = InvoiceExtractorGUI.__new__(InvoiceExtractorGUI)
+        var = mock.Mock()
+        var.get.return_value = 'Time'
+
+        self.assertEqual(gui._get_range_time_filter_value(var, placeholder_active=True), '')
+
+    def test_set_date_from_time_display_value_sets_placeholder_and_selected_value(self):
+        gui = InvoiceExtractorGUI.__new__(InvoiceExtractorGUI)
+        gui._range_time_placeholder = 'Time'
+        gui.date_from_time_var = mock.Mock()
+        gui.date_from_time_entry = mock.Mock()
+
+        gui._set_date_from_time_display_value('')
+        self.assertTrue(gui._date_from_time_placeholder_active)
+        gui.date_from_time_var.set.assert_called_with('Time')
+        gui.date_from_time_entry.config.assert_called_with(fg='#7a7a7a')
+
+        gui.date_from_time_var.set.reset_mock()
+        gui.date_from_time_entry.config.reset_mock()
+
+        gui._set_date_from_time_display_value('2:30 PM')
+        self.assertFalse(gui._date_from_time_placeholder_active)
+        gui.date_from_time_var.set.assert_called_with('2:30 PM')
+        gui.date_from_time_entry.config.assert_called_with(fg='#111111')
 
 
 class StatusMessageTests(unittest.TestCase):

@@ -644,8 +644,11 @@ class InvoiceExtractorGUI:
         self._calendar_suppress_until = 0.0
         self._time_picker_open = False
         self._time_picker_suppress_until = 0.0
-        self._today_time_placeholder = "Time of Day"
+        self._today_time_placeholder = "Time"
         self._today_time_placeholder_active = False
+        self._range_time_placeholder = "Time"
+        self._date_from_time_placeholder_active = False
+        self._date_to_time_placeholder_active = False
         self.app_version = load_app_version()
         self.available_update = None
         self.update_button = None
@@ -1502,7 +1505,43 @@ class InvoiceExtractorGUI:
             return ''
         return self.today_time_value_var.get().strip()
 
-    def _get_range_time_filter_value(self, target_var):
+    def _set_range_time_placeholder(self, target_var, entry_widget, active_attr):
+        if entry_widget is None:
+            return
+        setattr(self, active_attr, True)
+        target_var.set(self._range_time_placeholder)
+        entry_widget.config(fg='#7a7a7a')
+
+    def _set_range_time_display_value(self, value, target_var, entry_widget, active_attr):
+        if entry_widget is None:
+            return
+        text = str(value or '').strip()
+        if not text:
+            self._set_range_time_placeholder(target_var, entry_widget, active_attr)
+            return
+        setattr(self, active_attr, False)
+        target_var.set(text)
+        entry_widget.config(fg='#111111')
+
+    def _set_date_from_time_display_value(self, value):
+        self._set_range_time_display_value(
+            value,
+            self.date_from_time_var,
+            getattr(self, 'date_from_time_entry', None),
+            '_date_from_time_placeholder_active',
+        )
+
+    def _set_date_to_time_display_value(self, value):
+        self._set_range_time_display_value(
+            value,
+            self.date_to_time_var,
+            getattr(self, 'date_to_time_entry', None),
+            '_date_to_time_placeholder_active',
+        )
+
+    def _get_range_time_filter_value(self, target_var, placeholder_active=False):
+        if placeholder_active:
+            return ''
         return str(target_var.get() or '').strip()
 
     def _open_time_picker_at(self, target_var, anchor_widget, title=None, current_value=None, set_value=None):
@@ -1651,8 +1690,14 @@ class InvoiceExtractorGUI:
         if self.date_filter_var.get():
             from_raw = self.date_from_var.get().strip()
             to_raw = self.date_to_var.get().strip()
-            from_time_raw = self._get_range_time_filter_value(self.date_from_time_var)
-            to_time_raw = self._get_range_time_filter_value(self.date_to_time_var)
+            from_time_raw = self._get_range_time_filter_value(
+                self.date_from_time_var,
+                placeholder_active=getattr(self, '_date_from_time_placeholder_active', False),
+            )
+            to_time_raw = self._get_range_time_filter_value(
+                self.date_to_time_var,
+                placeholder_active=getattr(self, '_date_to_time_placeholder_active', False),
+            )
             if not from_raw and not to_raw:
                 self.log("Date filter is enabled but no dates were provided.", "error")
                 return None, None, None
@@ -1866,24 +1911,29 @@ class InvoiceExtractorGUI:
             )
         )
 
-        ttk.Label(filter_frame, text="From Time").grid(row=1, column=1, padx=(10, 2), pady=(4, 0))
         self.date_from_time_entry = tk.Entry(
             filter_frame,
             textvariable=self.date_from_time_var,
-            width=12,
+            width=10,
             relief=tk.SUNKEN,
             bd=1,
             readonlybackground='white',
             disabledbackground='#f0f0f0',
+            disabledforeground='#7a7a7a',
+            fg='#7a7a7a',
         )
-        self.date_from_time_entry.grid(row=1, column=2, padx=(0, 10), pady=(4, 0))
+        self.date_from_time_entry.grid(row=0, column=3, padx=(0, 10))
         self.date_from_time_entry.bind(
             "<FocusIn>",
             lambda _e: self._open_time_picker_at(
                 self.date_from_time_var,
                 self.date_from_time_entry,
                 "Select FROM Time",
-                current_value=self._get_range_time_filter_value(self.date_from_time_var),
+                current_value=self._get_range_time_filter_value(
+                    self.date_from_time_var,
+                    placeholder_active=getattr(self, '_date_from_time_placeholder_active', False),
+                ),
+                set_value=self._set_date_from_time_display_value,
             )
         )
         self.date_from_time_entry.bind(
@@ -1892,28 +1942,37 @@ class InvoiceExtractorGUI:
                 self.date_from_time_var,
                 self.date_from_time_entry,
                 "Select FROM Time",
-                current_value=self._get_range_time_filter_value(self.date_from_time_var),
+                current_value=self._get_range_time_filter_value(
+                    self.date_from_time_var,
+                    placeholder_active=getattr(self, '_date_from_time_placeholder_active', False),
+                ),
+                set_value=self._set_date_from_time_display_value,
             )
         )
 
-        ttk.Label(filter_frame, text="To Time").grid(row=1, column=3, padx=(0, 2), pady=(4, 0))
         self.date_to_time_entry = tk.Entry(
             filter_frame,
             textvariable=self.date_to_time_var,
-            width=12,
+            width=10,
             relief=tk.SUNKEN,
             bd=1,
             readonlybackground='white',
             disabledbackground='#f0f0f0',
+            disabledforeground='#7a7a7a',
+            fg='#7a7a7a',
         )
-        self.date_to_time_entry.grid(row=1, column=4, pady=(4, 0))
+        self.date_to_time_entry.grid(row=0, column=6)
         self.date_to_time_entry.bind(
             "<FocusIn>",
             lambda _e: self._open_time_picker_at(
                 self.date_to_time_var,
                 self.date_to_time_entry,
                 "Select TO Time",
-                current_value=self._get_range_time_filter_value(self.date_to_time_var),
+                current_value=self._get_range_time_filter_value(
+                    self.date_to_time_var,
+                    placeholder_active=getattr(self, '_date_to_time_placeholder_active', False),
+                ),
+                set_value=self._set_date_to_time_display_value,
             )
         )
         self.date_to_time_entry.bind(
@@ -1922,12 +1981,18 @@ class InvoiceExtractorGUI:
                 self.date_to_time_var,
                 self.date_to_time_entry,
                 "Select TO Time",
-                current_value=self._get_range_time_filter_value(self.date_to_time_var),
+                current_value=self._get_range_time_filter_value(
+                    self.date_to_time_var,
+                    placeholder_active=getattr(self, '_date_to_time_placeholder_active', False),
+                ),
+                set_value=self._set_date_to_time_display_value,
             )
         )
+        self._set_date_from_time_display_value('')
+        self._set_date_to_time_display_value('')
 
         today_time_row = ttk.Frame(filter_frame)
-        today_time_row.grid(row=2, column=0, columnspan=5, sticky='w', pady=(4, 0))
+        today_time_row.grid(row=1, column=0, columnspan=7, sticky='w', pady=(6, 0))
 
         self.today_time_filter_check = ttk.Checkbutton(
             today_time_row,
@@ -1941,7 +2006,7 @@ class InvoiceExtractorGUI:
             today_time_row,
             textvariable=self.today_time_mode_var,
             values=("Before", "After"),
-            width=8,
+            width=7,
             state='readonly',
         )
         self.today_time_mode_combo.pack(side=tk.LEFT, padx=(6, 6))
@@ -1949,7 +2014,7 @@ class InvoiceExtractorGUI:
         self.today_time_entry = tk.Entry(
             today_time_row,
             textvariable=self.today_time_value_var,
-            width=14,
+            width=10,
             relief=tk.SUNKEN,
             bd=1,
             readonlybackground='white',
@@ -1981,18 +2046,18 @@ class InvoiceExtractorGUI:
         self._set_today_time_placeholder()
 
         self.today_filter_check = ttk.Checkbutton(
-            filter_frame,
+            today_time_row,
             text="All from Today (Full Day)",
             variable=self.today_filter_var,
             command=self._on_today_filter_toggle
         )
-        self.today_filter_check.grid(row=2, column=0, sticky='w', pady=(4, 0))
+        self.today_filter_check.pack(side=tk.LEFT, padx=(14, 0))
 
         ttk.Label(
             filter_frame,
             text="Filtering by date may download already downloaded invoices.",
             foreground='orange'
-        ).grid(row=3, column=0, columnspan=5, sticky='w', pady=(4, 0))
+        ).grid(row=2, column=0, columnspan=7, sticky='w', pady=(4, 0))
 
         # Buttons frame
         btn_frame = ttk.Frame(main_frame)

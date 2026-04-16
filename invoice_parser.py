@@ -6636,7 +6636,13 @@ def parse_invoice_text(text, filepath=None):
     if not data['total']:
         data['total'] = table_fields.get('total', '')
 
-    # --- Line Items ---
+    data = _refresh_vendor_dependent_fields(data, text, filepath)
+
+    return data
+
+
+def _refresh_vendor_dependent_fields(data, text, filepath=None):
+    """Re-run vendor-specific item extraction and overrides after vendor resolution changes."""
     data['line_items'] = extract_line_items(text, filepath, vendor_name=data.get('vendor'))
     if (
         _is_redhead_vendor_name(data.get('vendor', ''))
@@ -6655,15 +6661,12 @@ def parse_invoice_text(text, filepath=None):
             footer_discount_item = _extract_turn14_footer_discount_item(text)
             if footer_discount_item:
                 data['line_items'].append(footer_discount_item)
-    if data['line_items']:
+    if data.get('line_items'):
         freight_items = [i for i in data['line_items'] if i.get('is_freight')]
         if freight_items and not data.get('shipping_description'):
             desc = freight_items[0].get('description') or freight_items[0].get('item_number') or 'Freight'
             data['shipping_description'] = desc
-
-    data = _apply_vendor_specific_overrides(data, text, filepath)
-
-    return data
+    return _apply_vendor_specific_overrides(data, text, filepath)
 
 
 def parse_invoice(
@@ -6724,26 +6727,56 @@ def parse_invoice(
                 f"{current_vendor or '(blank)'} -> {normalized_folder_vendor}"
             )
             data['vendor'] = normalized_folder_vendor
-            data['line_items'] = extract_line_items(text, filepath, vendor_name=data.get('vendor'))
-            if data.get('line_items'):
-                freight_items = [i for i in data['line_items'] if i.get('is_freight')]
-                if freight_items and not data.get('shipping_description'):
-                    desc = freight_items[0].get('description') or freight_items[0].get('item_number') or 'Freight'
-                    data['shipping_description'] = desc
-            data = _apply_vendor_specific_overrides(data, text, filepath)
+            data = _refresh_vendor_dependent_fields(data, text, filepath)
 
     parsed_vendor = normalize_vendor_name(data.get('vendor', ''))
     if (_is_reprint_vendor_name(parsed_vendor) or not parsed_vendor) and _text_matches_pt_layout(text):
         cb("  PT layout detected despite missing readable vendor text; applying PT parser.")
         data['vendor'] = 'Performance Turbochargers'
         parsed_vendor = normalize_vendor_name(data.get('vendor', ''))
-        data['line_items'] = extract_line_items(text, filepath, vendor_name=data.get('vendor'))
-        if data.get('line_items'):
-            freight_items = [i for i in data['line_items'] if i.get('is_freight')]
-            if freight_items and not data.get('shipping_description'):
-                desc = freight_items[0].get('description') or freight_items[0].get('item_number') or 'Freight'
-                data['shipping_description'] = desc
-        data = _apply_vendor_specific_overrides(data, text, filepath)
+        data = _refresh_vendor_dependent_fields(data, text, filepath)
+
+    sender_vendor = infer_vendor_from_email_metadata(
+        sender_email=sender_email,
+        sender_header=sender_header,
+        subject=sender_subject,
+        message_text=sender_message_text,
+    )
+    if sender_vendor and not folder_vendor:
+        normalized_sender_vendor = normalize_vendor_name(sender_vendor)
+        current_vendor = normalize_vendor_name(data.get('vendor', ''))
+        has_invoice_signal = bool(str(data.get('invoice_number', '')).strip())
+        if not has_invoice_signal:
+            has_invoice_signal = bool(str(data.get('po_number', '')).strip())
+        if not has_invoice_signal:
+            has_invoice_signal = any(
+                str(item.get('amount', '')).strip()
+                for item in (data.get('line_items') or [])
+            )
+        sender_ref = _extract_sender_email(sender_email) or str(sender_header or '').strip()
+        sender_requires_refresh = False
+        if current_vendor != normalized_sender_vendor:
+            if current_vendor:
+                cb(
+                    f"  Vendor overridden from sender {sender_ref}: "
+                    f"{current_vendor} -> {normalized_sender_vendor}",
+                    "warning"
+                )
+            else:
+                cb(
+                    f"  Vendor resolved from sender {sender_ref}: {normalized_sender_vendor}"
+                )
+            data['vendor'] = normalized_sender_vendor
+            sender_requires_refresh = True
+        elif not has_invoice_signal:
+            cb(
+                f"  Reapplying sender-confirmed vendor parser for {normalized_sender_vendor} "
+                "before validation."
+            )
+            sender_requires_refresh = True
+        if sender_requires_refresh:
+            data = _refresh_vendor_dependent_fields(data, text, filepath)
+            parsed_vendor = normalize_vendor_name(data.get('vendor', ''))
 
     # Step 4: Pre-validate — if no bill number, no PO number, and no line items,
     # this is not an invoice (e.g. return forms, flyers, packing slips).
@@ -6766,29 +6799,6 @@ def parse_invoice(
                 f"{current_vendor or '(blank)'} -> {normalized_folder_vendor}"
             )
             data['vendor'] = normalized_folder_vendor
-
-    sender_vendor = infer_vendor_from_email_metadata(
-        sender_email=sender_email,
-        sender_header=sender_header,
-        subject=sender_subject,
-        message_text=sender_message_text,
-    )
-    if sender_vendor and not folder_vendor:
-        normalized_sender_vendor = normalize_vendor_name(sender_vendor)
-        current_vendor = normalize_vendor_name(data.get('vendor', ''))
-        if current_vendor != normalized_sender_vendor:
-            sender_ref = _extract_sender_email(sender_email) or str(sender_header or '').strip()
-            if current_vendor:
-                cb(
-                    f"  Vendor overridden from sender {sender_ref}: "
-                    f"{current_vendor} -> {normalized_sender_vendor}",
-                    "warning"
-                )
-            else:
-                cb(
-                    f"  Vendor resolved from sender {sender_ref}: {normalized_sender_vendor}"
-                )
-            data['vendor'] = normalized_sender_vendor
 
     if not data.get('vendor'):
         data['vendor'] = infer_vendor_from_filename(filename)
