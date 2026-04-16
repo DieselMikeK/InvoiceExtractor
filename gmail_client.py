@@ -22,6 +22,7 @@ SCOPES = [
 ]
 
 PROCESSED_LABEL_NAME = "InvoiceExtractor-Processed"
+MESSAGE_TEXT_MAX_CHARS = 8000
 
 
 class WrongAuthorizedAccountError(Exception):
@@ -123,12 +124,26 @@ def _collect_message_text_parts(payload):
     return parts
 
 
-def _extract_forwarded_message_metadata(payload, snippet=''):
-    """Extract original sender and subject from a forwarded Gmail message body."""
+def _extract_message_context_text(payload, snippet=''):
+    """Return normalized message text for vendor clues from forwarded emails."""
     text_chunks = _collect_message_text_parts(payload)
     if snippet:
         text_chunks.append(unescape(str(snippet)))
     combined = '\n'.join(chunk for chunk in text_chunks if chunk).strip()
+    if not combined:
+        return ''
+    combined = re.sub(r'\r\n?', '\n', combined)
+    combined = re.sub(r'[ \t]+', ' ', combined)
+    combined = re.sub(r'\n{3,}', '\n\n', combined)
+    combined = combined.strip()
+    if len(combined) > MESSAGE_TEXT_MAX_CHARS:
+        combined = combined[:MESSAGE_TEXT_MAX_CHARS].rstrip()
+    return combined
+
+
+def _extract_forwarded_message_metadata(payload, snippet=''):
+    """Extract original sender and subject from a forwarded Gmail message body."""
+    combined = _extract_message_context_text(payload, snippet=snippet)
     if not combined:
         return '', '', ''
 
@@ -531,6 +546,7 @@ class GmailClient:
                 }
                 subject = headers.get('Subject', '(no subject)')
                 from_header = headers.get('From', '')
+                message_text = _extract_message_context_text(payload, msg.get('snippet', ''))
                 sender_email = _extract_sender_email(from_header)
                 sender_header = from_header
                 (
@@ -588,6 +604,7 @@ class GmailClient:
                             'sender_email': sender_email,
                             'sender_header': sender_header,
                             'subject': subject,
+                            'message_text': message_text,
                             'message_id': msg_id,
                         })
                     if download_completed:

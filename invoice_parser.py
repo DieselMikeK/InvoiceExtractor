@@ -377,28 +377,42 @@ def infer_vendor_from_sender(sender_email='', sender_header=''):
     return ''
 
 
-def _infer_vendor_from_shared_sender_subject(sender_email='', sender_header='', subject=''):
-    """Resolve vendors that share a sender mailbox by confirming the subject text."""
+def _infer_vendor_from_shared_sender_content(sender_email='', sender_header='', subject='', message_text=''):
+    """Resolve vendors that share a sender mailbox by confirming subject/body clues."""
     email_value = _extract_sender_email(sender_email or sender_header)
     subject_value = str(subject or '').strip()
+    message_value = str(message_text or '').strip()
     if not email_value or not subject_value:
+        if not email_value or not message_value:
+            return ''
+    if not email_value.endswith('@suspension.randysww.com'):
         return ''
-    if email_value.endswith('@suspension.randysww.com'):
-        if re.search(r'\bcarli\s+suspension\b', subject_value, re.IGNORECASE) and re.search(
-            r'\binvoice',
-            subject_value,
-            re.IGNORECASE,
-        ):
-            return 'Carli Suspension - $10 DS Fee'
+    if re.search(r'\bcarli\s+suspension\b', subject_value, re.IGNORECASE) and re.search(
+        r'\binvoice',
+        subject_value,
+        re.IGNORECASE,
+    ):
+        return 'Carli Suspension - $10 DS Fee'
+    body_vendor = _find_vendor_by_address_alias(message_value)
+    if body_vendor:
+        return normalize_vendor_name(body_vendor)
     return ''
 
 
-def infer_vendor_from_email_metadata(sender_email='', sender_header='', subject=''):
-    """Infer a vendor from sender metadata plus subject-based confirmations when needed."""
-    subject_vendor = _infer_vendor_from_shared_sender_subject(
+def infer_vendor_from_email_metadata(sender_email='', sender_header='', subject='', message_text=''):
+    """Infer a vendor from sender metadata plus body/subject confirmations when needed."""
+    if _extract_sender_email(sender_email or sender_header).endswith('@suspension.randysww.com'):
+        return _infer_vendor_from_shared_sender_content(
+            sender_email=sender_email,
+            sender_header=sender_header,
+            subject=subject,
+            message_text=message_text,
+        )
+    subject_vendor = _infer_vendor_from_shared_sender_content(
         sender_email=sender_email,
         sender_header=sender_header,
         subject=subject,
+        message_text=message_text,
     )
     if subject_vendor:
         return subject_vendor
@@ -6628,7 +6642,14 @@ def parse_invoice_text(text, filepath=None):
     return data
 
 
-def parse_invoice(filepath, status_callback=None, sender_email='', sender_header='', sender_subject=''):
+def parse_invoice(
+    filepath,
+    status_callback=None,
+    sender_email='',
+    sender_header='',
+    sender_subject='',
+    sender_message_text='',
+):
     """Parse a single invoice file and return structured data.
 
     Args:
@@ -6726,6 +6747,7 @@ def parse_invoice(filepath, status_callback=None, sender_email='', sender_header
         sender_email=sender_email,
         sender_header=sender_header,
         subject=sender_subject,
+        message_text=sender_message_text,
     )
     if sender_vendor and not folder_vendor:
         normalized_sender_vendor = normalize_vendor_name(sender_vendor)

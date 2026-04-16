@@ -148,6 +148,8 @@ class GmailClientDownloadTests(unittest.TestCase):
         self.assertEqual(downloaded[0]['sender_email'], 'invoicing@kcturbos.com')
         self.assertIn('KC Turbos Invoicing', downloaded[0]['sender_header'])
         self.assertEqual(downloaded[0]['subject'], 'KC Turbos Invoice(s) Attached')
+        self.assertIn('KC Turbos Invoice(s) Attached', downloaded[0]['message_text'])
+        self.assertIn('Forwarded message', downloaded[0]['message_text'])
 
     def test_message_time_filter_skips_messages_outside_requested_window(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -46,8 +46,26 @@ class NewVendorFirstPassTests(unittest.TestCase):
                 sender_email='noreply@suspension.randysww.com',
                 sender_header='',
                 subject='Fwd: ***DO NOT REPLY***Shared vendor invoice attached',
+                message_text='',
             ),
             '',
+        )
+
+    def test_daystar_shared_sender_domain_uses_email_body_address(self):
+        daystar_body = (
+            'Daystar\n'
+            '15461 Slover Ave\n'
+            'Fontana CA 92337\n'
+        )
+
+        self.assertEqual(
+            infer_vendor_from_email_metadata(
+                sender_email='noreply@suspension.randysww.com',
+                sender_header='',
+                subject='Fwd: invoice attached',
+                message_text=daystar_body,
+            ),
+            'Daystar',
         )
 
     def test_power_stroke_products_credit_card_and_will_call(self):

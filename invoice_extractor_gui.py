@@ -74,6 +74,7 @@ SENDER_METADATA_FIELDNAMES = [
     'sender_email',
     'sender_header',
     'subject',
+    'message_text',
     'message_id',
     'downloaded_at',
 ]
@@ -2158,6 +2159,7 @@ class InvoiceExtractorGUI:
                     'sender_email': str((attachment or {}).get('sender_email', '') or '').strip().lower(),
                     'sender_header': str((attachment or {}).get('sender_header', '') or '').strip(),
                     'subject': str((attachment or {}).get('subject', '') or '').strip(),
+                    'message_text': str((attachment or {}).get('message_text', '') or '').strip(),
                     'message_id': str((attachment or {}).get('message_id', '') or '').strip(),
                     'downloaded_at': timestamp_now,
                 }
@@ -2235,6 +2237,7 @@ class InvoiceExtractorGUI:
                             sender_email=sender_entry.get('sender_email', ''),
                             sender_header=sender_entry.get('sender_header', ''),
                             sender_subject=sender_entry.get('subject', ''),
+                            sender_message_text=sender_entry.get('message_text', ''),
                         )
 
                         if invoice_data and invoice_data.get('not_an_invoice'):
