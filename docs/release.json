@@ -1,24 +1,24 @@
 {
-  "version": "1.2.36",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.36/InvoiceExtractor.exe",
-  "sha256": "8425bfd7c2536871ecff82c42de2ba2a7cd37ef2d7d90da0aaf93e8dbdbb4379",
-  "notes": "Stop trusting the shared suspension.randysww.com sender by itself. Confirm Carli from the forwarded subject and Daystar from the forwarded email body address.",
-  "published_at": "04/16/2026 19:53:44",
+  "version": "1.2.37",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.37/InvoiceExtractor.exe",
+  "sha256": "cf616f7176bd3def01632ddd1f9015d667921de801b6e8c3438b2440afc8325c",
+  "notes": "For the shared suspension.randysww.com sender, scan the full forwarded email body for Carli clues and continue scanning full invoice text/body for Daystar address matches.",
+  "published_at": "04/16/2026 20:34:41",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.36/InvoiceExtractor.exe",
-      "sha256": "8425bfd7c2536871ecff82c42de2ba2a7cd37ef2d7d90da0aaf93e8dbdbb4379"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.37/InvoiceExtractor.exe",
+      "sha256": "cf616f7176bd3def01632ddd1f9015d667921de801b6e8c3438b2440afc8325c"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.36/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.37/app-vendors.csv",
       "sha256": "c7f6c6962bd528ccdd5a9807e6d19710701f3583637ccc904d823b7dd8cee8f1"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.36/update-InvoiceExtractorUpdater.exe",
-      "sha256": "21c50e2c7c438cf3c0e391e3455167df4001a99fe84f8bfb6a9450ae938fa9a1"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.37/update-InvoiceExtractorUpdater.exe",
+      "sha256": "4d68db57a0efd0eefa62f2a4b4c601483e8dea33a28e1f14947859eeb169b4c8"
     }
   ]
 }
