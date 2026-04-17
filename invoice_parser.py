@@ -3527,32 +3527,62 @@ def _extract_dd_items_from_words(filepath):
 
 
 def _extract_poly_ship_to_lines(filepath):
-    """Extract Poly's Ship To column from the side-by-side Bill To / Ship To block."""
-    words, _page_width = _extract_first_page_words(filepath)
+    """Extract Poly's Ship To column from either Ship/Bill or Bill/Ship layouts."""
+    words, page_width = _extract_first_page_words(filepath)
     if not words:
         return []
 
     lines = _group_words_into_lines(words)
-    in_ship_block = False
-    ship_to_lines = []
+    header_words = None
+    stop_top = None
 
     for line_words in lines:
         line_text = _words_to_line_text(line_words)
-        if not in_ship_block:
-            if re.search(r'\bBill\s+To\b', line_text, re.IGNORECASE) and re.search(r'\bShip\s+To\b', line_text, re.IGNORECASE):
-                in_ship_block = True
+        if header_words is None and re.search(
+            r'\b(?:Bill\s+To\s+Ship\s+To|Ship\s+To\s+Bill\s+To)\b',
+            line_text,
+            re.IGNORECASE,
+        ):
+            header_words = line_words
             continue
-
-        if re.search(r'\bItem\s+Quantity\s+Description\b', line_text, re.IGNORECASE):
+        if header_words and re.search(
+            r'(?:\bTracking\b|\bNotes?\b|Shipping\s+Method\b|Item\b.*Quantity\b|Item\b.*Description\b)',
+            line_text,
+            re.IGNORECASE,
+        ):
+            stop_top = float(line_words[0].get('top', 0))
             break
 
-        ship_text = _words_to_line_text(
-            [word for word in line_words if 170 <= float(word.get('x0', 0)) < 340]
-        )
-        if ship_text:
-            ship_to_lines.append(ship_text)
+    if not header_words:
+        return []
 
-    return ship_to_lines
+    header_top = float(header_words[0].get('top', 0))
+    ship_x = min(
+        (float(word.get('x0', 0)) for word in header_words if str(word.get('text', '')).lower() == 'ship'),
+        default=0,
+    )
+    bill_x = min(
+        (float(word.get('x0', 0)) for word in header_words if str(word.get('text', '')).lower() == 'bill'),
+        default=page_width or 1000,
+    )
+
+    if stop_top is None:
+        stop_top = max(float(word.get('top', 0)) for word in words) + 1
+
+    if ship_x and bill_x and ship_x < bill_x:
+        min_x = max(0, ship_x - 24)
+        max_x = max(min_x + 40, bill_x - 18)
+    else:
+        min_x = max(0, ship_x - 24)
+        max_x = page_width or 1000
+
+    return _extract_column_lines_from_words(
+        words,
+        min_x=min_x,
+        max_x=max_x,
+        min_top=header_top,
+        max_top=stop_top,
+    )
 
 
 def _extract_poly_items_from_words(filepath):
@@ -6938,6 +6968,8 @@ def parse_invoice(
         ship_to_lines = _extract_ma_kt_ship_to_lines(filepath)
     elif _is_dynomite_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_dd_ship_to_lines(filepath)
+    elif _is_poly_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_poly_ship_to_lines(filepath)
     elif _is_suspensionmaxx_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_sm_ship_to_lines(filepath)
 
