@@ -428,7 +428,7 @@ def infer_vendor_from_folder_marker(filepath):
         return ''
     folder_vendor_map = {
         'ps': 'Power Stroke Products',
-        'hc': 'Hamilton Cams - $20 Dropship Fee',
+        'hc': 'Hamilton Cams',
         'bch': 'Bosch',
         'bdp': 'Beans Diesel Performance',
         'all': 'Diesel Forward',
@@ -2215,7 +2215,7 @@ def _is_hamilton_vendor_name(name):
         return True
     canonical = normalize_vendor_name(name or '')
     canonical_key = _normalize_vendor_key(canonical or '')
-    return bool(canonical_key and canonical_key == _normalize_vendor_key('Hamilton Cams - $20 Dropship Fee'))
+    return bool(canonical_key and canonical_key == _normalize_vendor_key('Hamilton Cams'))
 
 
 def _is_beans_vendor_name(name):
