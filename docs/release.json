@@ -1,24 +1,24 @@
 {
-  "version": "1.2.42",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.42/InvoiceExtractor.exe",
-  "sha256": "9c99c2b4cd23ceaa3258dad814377c8ef9c43d4299a7a79cb1a9a362c3d46f45",
-  "notes": "Change the name Hamilton Cams - $20 Dropship Fee to Hamilton Cams",
-  "published_at": "04/17/2026 16:59:19",
+  "version": "1.2.43",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.43/InvoiceExtractor.exe",
+  "sha256": "d230f60aa7951d8591df3cff0c7547b3d227082617100e8b9505d4fe48ae5460",
+  "notes": "Poly Performance is not pulling in the following information:",
+  "published_at": "04/17/2026 17:09:00",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.42/InvoiceExtractor.exe",
-      "sha256": "9c99c2b4cd23ceaa3258dad814377c8ef9c43d4299a7a79cb1a9a362c3d46f45"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.43/InvoiceExtractor.exe",
+      "sha256": "d230f60aa7951d8591df3cff0c7547b3d227082617100e8b9505d4fe48ae5460"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.42/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.43/app-vendors.csv",
       "sha256": "809b02a47c1c8b4653a052c6239f1caa8c98d12b056fb9e85a8f5109f5bf640e"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.42/update-InvoiceExtractorUpdater.exe",
-      "sha256": "c32b07c62e10aa07e2eabe24783c619b0f986e663074feac51c8450c926d636e"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.43/update-InvoiceExtractorUpdater.exe",
+      "sha256": "315618022cf192874848c7c1e1693b8ad08bf0f29bad63a90f1cc0c0c84cec80"
     }
   ]
 }
