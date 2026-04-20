@@ -6411,7 +6411,7 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
                 data['date'] = header_dates[-1]
 
         po_match = re.search(
-            r'Terms\s+Due\s+Date\s+PO\s*#.*?\n\s*(?:Net\s+30\s+)?(?:\d{1,2}/\d{1,2}/\d{4}\s+)?(\d{4,})\b',
+            r'Terms\s+Due\s+Date\s+PO\s*#.*?\n\s*(?:Net\s+30\s+)?(?:\d{1,2}/\d{1,2}/\d{2,4}\s+)?(\d{4,})\b',
             layout,
             re.IGNORECASE | re.DOTALL,
         )
