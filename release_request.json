@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Resolve Carli invoices from shared-sender emails that use the quantity-first layout, and recognize KC Turbos Netsuite sender headers so vendor and PO fields populate from saved email metadata.",
-    "requested_at":  "2026-04-21T17:12:39.1288365Z"
+    "notes":  "Document the forwarded-email vendor rules in AGENTS.md and use forwarded email body text as the primary vendor signal for shared senders like suspension.randysww.com and system@sent-via.netsuite.com, with subject only as fallback.",
+    "requested_at":  "2026-04-21T17:25:10.4928690Z"
 }
