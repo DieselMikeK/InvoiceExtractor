@@ -1,24 +1,24 @@
 {
-  "version": "1.2.44",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.44/InvoiceExtractor.exe",
-  "sha256": "6e6b9cd85c2f1022f08426555e8232271065d4c2aea38b280c6bd7d01380a3af",
-  "notes": "Pull the PO # from KC Turbos invoices and populate it in the Memo column of the",
-  "published_at": "04/20/2026 17:56:39",
+  "version": "1.2.45",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.45/InvoiceExtractor.exe",
+  "sha256": "2ab9daa373613b87cce2de9a754dcd085f8b4b05a24c11979e159c1dd6c7ec47",
+  "notes": "Resolve Carli invoices from shared-sender emails that use the quantity-first layout, and recognize KC Turbos Netsuite sender headers so vendor and PO fields populate from saved email metadata.",
+  "published_at": "04/21/2026 17:14:30",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.44/InvoiceExtractor.exe",
-      "sha256": "6e6b9cd85c2f1022f08426555e8232271065d4c2aea38b280c6bd7d01380a3af"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.45/InvoiceExtractor.exe",
+      "sha256": "2ab9daa373613b87cce2de9a754dcd085f8b4b05a24c11979e159c1dd6c7ec47"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.44/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.45/app-vendors.csv",
       "sha256": "809b02a47c1c8b4653a052c6239f1caa8c98d12b056fb9e85a8f5109f5bf640e"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.44/update-InvoiceExtractorUpdater.exe",
-      "sha256": "6214337a4b4dd8bb0ca453bdca14649666b4ca75a07af09d5107f2262da78634"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.45/update-InvoiceExtractorUpdater.exe",
+      "sha256": "f184f9d8cd61fc41a9cddad51564d5d0509156a251b0f9d31d26c235a91c9c42"
     }
   ]
 }
