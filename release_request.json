@@ -1,4 +1,4 @@
-{
-  "notes": "Pull the PO # from KC Turbos invoices and populate it in the Memo column of the",
-  "requested_at": "2026-04-20T17:54:52+00:00"
+﻿{
+    "notes":  "Resolve Carli invoices from shared-sender emails that use the quantity-first layout, and recognize KC Turbos Netsuite sender headers so vendor and PO fields populate from saved email metadata.",
+    "requested_at":  "2026-04-21T17:12:39.1288365Z"
 }
