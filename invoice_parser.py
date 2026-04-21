@@ -367,13 +367,9 @@ def infer_vendor_from_sender(sender_email='', sender_header=''):
         if alias_value.startswith('@'):
             if email_value.endswith(alias_value):
                 return vendor
-            if alias_value in header_value:
-                return vendor
             continue
         if '@' in alias_value:
             if email_value == alias_value:
-                return vendor
-            if alias_value in header_value:
                 return vendor
             continue
         if alias_value in header_value:
@@ -381,48 +377,63 @@ def infer_vendor_from_sender(sender_email='', sender_header=''):
     return ''
 
 
-def _infer_vendor_from_shared_sender_content(sender_email='', sender_header='', subject='', message_text=''):
-    """Resolve vendors that share a sender mailbox by confirming subject/body clues."""
-    email_value = _extract_sender_email(sender_email or sender_header)
-    subject_value = str(subject or '').strip()
-    message_value = str(message_text or '').strip()
-    if not email_value or not subject_value:
-        if not email_value or not message_value:
-            return ''
-    if not email_value.endswith('@suspension.randysww.com'):
+def _find_vendor_by_sender_alias_in_text(text):
+    """Look for whitelisted sender aliases inside forwarded email text."""
+    if not text or not VENDOR_SENDER_ALIAS_PAIRS:
         return ''
-    if re.search(r'\bcarli\s+suspension\b', subject_value, re.IGNORECASE) and re.search(
-        r'\binvoice',
-        subject_value,
-        re.IGNORECASE,
-    ):
-        return 'Carli Suspension - $10 DS Fee'
-    body_vendor = _find_vendor_in_text(message_value)
-    if body_vendor:
-        return normalize_vendor_name(body_vendor)
-    body_vendor = _find_vendor_by_address_alias(message_value)
-    if body_vendor:
-        return normalize_vendor_name(body_vendor)
+    lowered_text = str(text or '').lower()
+    for alias, vendor in VENDOR_SENDER_ALIAS_PAIRS:
+        alias_value = str(alias or '').strip().lower()
+        if not alias_value or '@' not in alias_value:
+            continue
+        if alias_value in lowered_text:
+            return vendor
     return ''
+
+
+def _infer_vendor_from_email_content(subject='', message_text=''):
+    """Resolve a vendor from forwarded email body first, then subject as fallback."""
+    for text in (str(message_text or '').strip(), str(subject or '').strip()):
+        if not text:
+            continue
+        vendor = _find_vendor_in_text(text)
+        if vendor:
+            return normalize_vendor_name(vendor)
+        vendor = _find_vendor_by_address_alias(text)
+        if vendor:
+            return normalize_vendor_name(vendor)
+        vendor = _find_vendor_by_sender_alias_in_text(text)
+        if vendor:
+            return normalize_vendor_name(vendor)
+    return ''
+
+
+def _infer_vendor_from_shared_sender_content(sender_email='', sender_header='', subject='', message_text=''):
+    """Resolve vendors that share a sender mailbox by reading the forwarded email content."""
+    email_value = _extract_sender_email(sender_email or sender_header)
+    if not email_value:
+        return ''
+    if not (
+        email_value.endswith('@suspension.randysww.com')
+        or email_value == 'system@sent-via.netsuite.com'
+    ):
+        return ''
+    return _infer_vendor_from_email_content(subject=subject, message_text=message_text)
 
 
 def infer_vendor_from_email_metadata(sender_email='', sender_header='', subject='', message_text=''):
     """Infer a vendor from sender metadata plus body/subject confirmations when needed."""
-    if _extract_sender_email(sender_email or sender_header).endswith('@suspension.randysww.com'):
-        return _infer_vendor_from_shared_sender_content(
-            sender_email=sender_email,
-            sender_header=sender_header,
-            subject=subject,
-            message_text=message_text,
-        )
-    subject_vendor = _infer_vendor_from_shared_sender_content(
+    shared_sender_vendor = _infer_vendor_from_shared_sender_content(
         sender_email=sender_email,
         sender_header=sender_header,
         subject=subject,
         message_text=message_text,
     )
-    if subject_vendor:
-        return subject_vendor
+    if shared_sender_vendor:
+        return shared_sender_vendor
+    sender_email_value = _extract_sender_email(sender_email or sender_header)
+    if sender_email_value in {'system@sent-via.netsuite.com'} or sender_email_value.endswith('@suspension.randysww.com'):
+        return ''
     return infer_vendor_from_sender(sender_email=sender_email, sender_header=sender_header)
 
 

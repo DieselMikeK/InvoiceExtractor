@@ -87,11 +87,28 @@ class NewVendorFirstPassTests(unittest.TestCase):
             'Carli Suspension - $10 DS Fee',
         )
 
-    def test_kc_turbos_sender_header_matches_embedded_whitelisted_address(self):
+    def test_kc_turbos_shared_sender_does_not_trust_header_alias_by_itself(self):
         self.assertEqual(
-            infer_vendor_from_sender(
+            infer_vendor_from_email_metadata(
                 sender_email='system@sent-via.netsuite.com',
                 sender_header='"KC Turbos Invoicing (invoicing@kcturbos.com)" <system@sent-via.netsuite.com>',
+                subject='',
+                message_text='',
+            ),
+            '',
+        )
+
+    def test_kc_turbos_shared_sender_uses_body_vendor_hint(self):
+        self.assertEqual(
+            infer_vendor_from_email_metadata(
+                sender_email='system@sent-via.netsuite.com',
+                sender_header='"KC Turbos Invoicing (invoicing@kcturbos.com)" <system@sent-via.netsuite.com>',
+                subject='Invoice attached',
+                message_text=(
+                    '---------- Forwarded message ---------\n'
+                    'From: KC Turbos Invoicing <invoicing@kcturbos.com>\n'
+                    'Please review the attached KC Turbos invoice.\n'
+                ),
             ),
             'KC Turbos',
         )
