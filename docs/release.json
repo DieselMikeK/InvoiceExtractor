@@ -1,24 +1,24 @@
 {
-  "version": "1.2.45",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.45/InvoiceExtractor.exe",
-  "sha256": "2ab9daa373613b87cce2de9a754dcd085f8b4b05a24c11979e159c1dd6c7ec47",
-  "notes": "Resolve Carli invoices from shared-sender emails that use the quantity-first layout, and recognize KC Turbos Netsuite sender headers so vendor and PO fields populate from saved email metadata.",
-  "published_at": "04/21/2026 17:14:30",
+  "version": "1.2.46",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.46/InvoiceExtractor.exe",
+  "sha256": "63bff787e4db21f68dbc629c2500144596b95a33026004a8b3b8dd299aa40fcf",
+  "notes": "Document the forwarded-email vendor rules in AGENTS.md and use forwarded email body text as the primary vendor signal for shared senders like suspension.randysww.com and system@sent-via.netsuite.com, with subject only as fallback.",
+  "published_at": "04/21/2026 17:26:59",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.45/InvoiceExtractor.exe",
-      "sha256": "2ab9daa373613b87cce2de9a754dcd085f8b4b05a24c11979e159c1dd6c7ec47"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.46/InvoiceExtractor.exe",
+      "sha256": "63bff787e4db21f68dbc629c2500144596b95a33026004a8b3b8dd299aa40fcf"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.45/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.46/app-vendors.csv",
       "sha256": "809b02a47c1c8b4653a052c6239f1caa8c98d12b056fb9e85a8f5109f5bf640e"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.45/update-InvoiceExtractorUpdater.exe",
-      "sha256": "f184f9d8cd61fc41a9cddad51564d5d0509156a251b0f9d31d26c235a91c9c42"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.46/update-InvoiceExtractorUpdater.exe",
+      "sha256": "689d939d64f2868a3713d102e0824a022de7af6123554c7b5b6cfba0007c11f2"
     }
   ]
 }
