@@ -367,9 +367,13 @@ def infer_vendor_from_sender(sender_email='', sender_header=''):
         if alias_value.startswith('@'):
             if email_value.endswith(alias_value):
                 return vendor
+            if alias_value in header_value:
+                return vendor
             continue
         if '@' in alias_value:
             if email_value == alias_value:
+                return vendor
+            if alias_value in header_value:
                 return vendor
             continue
         if alias_value in header_value:
@@ -4536,7 +4540,7 @@ def _extract_carli_items_from_layout(filepath):
     lines = layout_text.splitlines()
     header_idx = None
     for idx, line in enumerate(lines):
-        if all(token in line for token in ('Item Number', 'Description', 'Quantity', 'Price', 'Unit', 'Extension')):
+        if all(token in line for token in ('Item Number', 'Description', 'Quantity', 'Price', 'Extension')):
             header_idx = idx
             break
     if header_idx is None:
@@ -4545,7 +4549,7 @@ def _extract_carli_items_from_layout(filepath):
     items = []
     current_item = None
     meta_row_re = re.compile(
-        r'^\s*\d{5,}\s+\d{1,2}/\d{1,2}/\d{4}\s+[A-Za-z0-9-]+\s+\d{1,2}/\d{1,2}/\d{4}\b',
+        r'^\s*\d{5,}(?:\s+\d{1,2}/\d{1,2}/\d{4})?\s+[A-Za-z0-9-]+\s+\d{1,2}/\d{1,2}/\d{4}\b',
         re.IGNORECASE,
     )
 
@@ -4578,6 +4582,18 @@ def _extract_carli_items_from_layout(filepath):
             product_service='Drop Ship',
         )
 
+    def _build_carli_item(item_number, quantity, units, description, unit_price, amount):
+        item = {
+            'item_number': item_number,
+            'quantity': quantity,
+            'units': units,
+            'description': description,
+            'unit_price': unit_price,
+            'amount': amount,
+        }
+        item = mark_freight_item(item)
+        return _normalize_carli_drop_ship_item(item)
+
     for raw_line in lines[header_idx + 1:]:
         stripped = raw_line.strip()
         if not stripped:
@@ -4600,18 +4616,42 @@ def _extract_carli_items_from_layout(filepath):
             prefix = ' '.join(tokens[:-4])
             if amount and unit_price and quantity and re.fullmatch(r'[A-Za-z]+', unit):
                 item_number, description = _prefix_to_item_and_desc(prefix)
-                current_item = {
-                    'item_number': item_number,
-                    'quantity': quantity,
-                    'units': unit,
-                    'description': description,
-                    'unit_price': unit_price,
-                    'amount': amount,
-                }
-                current_item = mark_freight_item(current_item)
-                current_item = _normalize_carli_drop_ship_item(current_item)
+                current_item = _build_carli_item(
+                    item_number=item_number,
+                    quantity=quantity,
+                    units=unit,
+                    description=description,
+                    unit_price=unit_price,
+                    amount=amount,
+                )
                 items.append(current_item)
                 continue
+            if (
+                amount
+                and unit_price
+                and re.fullmatch(r'[A-Za-z]+', unit)
+                and re.fullmatch(r'\d+(?:\.\d+)?', tokens[0])
+                and len(tokens) >= 6
+            ):
+                quantity = _normalize_qty(tokens[0])
+                item_tokens = tokens[1:-3]
+                if item_tokens:
+                    if len(item_tokens) >= 2 and item_tokens[:2] == ['DROP', 'SHIP']:
+                        item_number = 'DROP SHIP'
+                        description = ' '.join(item_tokens[2:]).strip()
+                    else:
+                        item_number = item_tokens[0]
+                        description = ' '.join(item_tokens[1:]).strip()
+                    current_item = _build_carli_item(
+                        item_number=item_number,
+                        quantity=quantity,
+                        units=unit,
+                        description=description,
+                        unit_price=unit_price,
+                        amount=amount,
+                    )
+                    items.append(current_item)
+                    continue
 
         if current_item:
             current_item['description'] = (
@@ -6079,13 +6119,25 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
             invoice_match = re.search(r'Invoice\s+No\.\s*:\s*([A-Za-z0-9-]+)', layout, re.IGNORECASE)
             if invoice_match:
                 data['invoice_number'] = invoice_match.group(1)
+        if not data.get('invoice_number') or not data.get('date'):
+            header_match = re.search(
+                r'\bINVOICE\b\s*[\r\n]+\s*([A-Za-z0-9-]+)\s+(\d{1,2}/\d{1,2}/\d{4})\b',
+                layout,
+                re.IGNORECASE,
+            )
+            if header_match:
+                if not data.get('invoice_number'):
+                    data['invoice_number'] = header_match.group(1)
+                if not data.get('date'):
+                    data['date'] = _normalize_date_value(header_match.group(2))
         if not data.get('date'):
             date_match = re.search(r'Invoice\s+Date\s*:\s*(\d{1,2}/\d{1,2}/\d{4})', layout, re.IGNORECASE)
             if date_match:
                 data['date'] = _normalize_date_value(date_match.group(1))
         if not data.get('po_number'):
             po_match = re.search(
-                r'Pack\s+Slip\s+#\s+Ship\s+Date\s+PO\s+Number.*?\n\s*\S+\s+\d{1,2}/\d{1,2}/\d{4}\s+(\d{4,})\b',
+                r'Pack\s+Slip\s+#(?:\s+Ship\s+Date)?\s+PO\s+Number\s+Order\s+Date.*?\n'
+                r'\s*\S+(?:\s+\d{1,2}/\d{1,2}/\d{4})?\s+(\d{4,})\b',
                 layout,
                 re.IGNORECASE | re.DOTALL,
             )

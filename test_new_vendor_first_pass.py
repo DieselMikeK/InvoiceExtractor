@@ -87,6 +87,15 @@ class NewVendorFirstPassTests(unittest.TestCase):
             'Carli Suspension - $10 DS Fee',
         )
 
+    def test_kc_turbos_sender_header_matches_embedded_whitelisted_address(self):
+        self.assertEqual(
+            infer_vendor_from_sender(
+                sender_email='system@sent-via.netsuite.com',
+                sender_header='"KC Turbos Invoicing (invoicing@kcturbos.com)" <system@sent-via.netsuite.com>',
+            ),
+            'KC Turbos',
+        )
+
     def test_carli_shared_sender_reapplies_vendor_parser_before_prevalidation(self):
         mock_pdf = mock.MagicMock()
         mock_pdf.pages = [object()]
@@ -152,6 +161,65 @@ class NewVendorFirstPassTests(unittest.TestCase):
         self.assertEqual(data.get('terms'), '1% 10 Net 30')
         self.assertEqual(len(data.get('line_items') or []), 2)
         refresh_mock.assert_called_once()
+
+    def test_carli_shared_sender_parses_quantity_first_layout(self):
+        mock_pdf = mock.MagicMock()
+        mock_pdf.pages = [object()]
+        mock_context = mock.MagicMock()
+        mock_context.__enter__.return_value = mock_pdf
+        mock_context.__exit__.return_value = False
+        carli_layout = (
+            'INVOICE\n'
+            '122225 4/14/2026\n'
+            '596Crane St, Lake Elsinore, CA 92530\n'
+            'ph:888-992-2754\n'
+            'Bill To: Ship To:\n'
+            'POWER PRODUCTS UNLIMITED, INC John Lilienthal\n'
+            '5204E BROADWAY AVE 101S east street\n'
+            'SPOKANE VALLEY WA UNITED STATES OF Eckley CO 80727UNITED STATES OF AMERICA\n'
+            'AMERICA\n'
+            'Terms: 1% 10 NET 30 Payment Due: 5/14/2026\n'
+            'Tracking: 1Z351FW60375328820 Shipped Via: UPS THIRD PARTY\n'
+            'Quantity Item Number Description Price Extension\n'
+            'Pack Slip # PO Number Order Date\n'
+            '1.00 CS-DBMM-0359 DODGE BILLET MOTOR MOUNT, 2003-2007 5.9L DIESEL 255.45 EACH 255.45\n'
+            '621227 0057931 4/14/2026\n'
+            '1.00 DROP SHIP DROP SHIP FEE 20.00 EACH 20.00\n'
+            '621227 0057931 4/14/2026\n'
+            'All Prices Are Shown in United States Dollar\n'
+            'Subtotal: 275.45\n'
+            'Tax: 0.00\n'
+            'Freight: 0.00\n'
+            'Total: 275.45\n'
+            'Thank You\n'
+            'Payments Applied: 0.00\n'
+            'Balance Due: 275.45\n'
+        )
+
+        with mock.patch('invoice_parser.pdfplumber.open', return_value=mock_context), \
+             mock.patch('invoice_parser.extract_text_from_pdf', return_value=carli_layout), \
+             mock.patch('invoice_parser.extract_layout_text_from_pdf', return_value=carli_layout), \
+             mock.patch('invoice_parser._extract_carli_ship_to_lines', return_value=[]):
+            data = parse_invoice(
+                'C:\\temp\\INVOICE-4-20-2026 04_20_26 09_02_16 880.PDF',
+                sender_email='noreply@suspension.randysww.com',
+                sender_header='<noreply@suspension.randysww.com>',
+                sender_subject='***DO NOT REPLY***Carli Suspension Invoice(s) Attached ( Invoice# 122225 0002000266 )',
+                sender_message_text=(
+                    'Please find attached Invoice# 122225 for your PO# 0057931\n'
+                    'Sincerely,\n'
+                    'Carli Suspension\n'
+                ),
+            )
+
+        self.assertFalse(data.get('not_an_invoice'))
+        self.assertEqual(data.get('vendor'), 'Carli Suspension - $10 DS Fee')
+        self.assertEqual(data.get('invoice_number'), '122225')
+        self.assertEqual(data.get('po_number'), '0057931')
+        self.assertEqual(data.get('terms'), '1% 10 Net 30')
+        self.assertEqual(len(data.get('line_items') or []), 2)
+        self.assertEqual(data['line_items'][0].get('item_number'), 'CS-DBMM-0359')
+        self.assertEqual(data['line_items'][1].get('description'), 'Drop Ship')
 
     def test_power_stroke_products_credit_card_and_will_call(self):
         stock_path = os.path.join(TRAINING_DIR, 'PS', 'Invoice_10513_from_PowerStroke_Products.pdf')
