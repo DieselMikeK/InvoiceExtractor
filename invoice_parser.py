@@ -290,16 +290,49 @@ def _find_vendor_by_address_alias(text):
         return ""
     for alias in VENDOR_ALIAS_LIST:
         alias_text = str(alias or '').strip()
-        if not re.search(r'\d', alias_text):
-            continue
-        if len(re.findall(r'[A-Za-z]', alias_text)) < 4:
+        if not _alias_looks_like_address(alias_text):
             continue
         alias_key = _normalize_vendor_key(alias_text)
-        if len(alias_key) < 8:
-            continue
         if alias_key and alias_key in normalized_text:
             return alias
     return ""
+
+
+def _alias_looks_like_address(alias_text):
+    alias_text = str(alias_text or '').strip()
+    if not alias_text:
+        return False
+    if not re.search(r'\d', alias_text):
+        return False
+    if len(re.findall(r'[A-Za-z]', alias_text)) < 4:
+        return False
+    return len(_normalize_vendor_key(alias_text)) >= 8
+
+
+def _vendor_text_aliases(vendor_name):
+    canonical_vendor = normalize_vendor_name(vendor_name)
+    if not canonical_vendor:
+        return []
+    candidates = [canonical_vendor]
+    seen_keys = {_normalize_vendor_key(canonical_vendor)}
+    for alias in VENDOR_ALIAS_LIST:
+        alias_text = str(alias or '').strip()
+        if not alias_text or _alias_looks_like_address(alias_text):
+            continue
+        alias_key = _normalize_vendor_key(alias_text)
+        if not alias_key or alias_key in seen_keys:
+            continue
+        if VENDOR_KEY_TO_CANONICAL.get(alias_key) != canonical_vendor:
+            continue
+        seen_keys.add(alias_key)
+        candidates.append(alias_text)
+    return candidates
+
+
+def _text_explicitly_mentions_vendor(text, vendor_name):
+    if not text or not vendor_name:
+        return False
+    return bool(_find_vendor_in_text_list(text, _vendor_text_aliases(vendor_name)))
 
 
 def normalize_vendor_name(name):
@@ -6848,7 +6881,20 @@ def parse_invoice(
             )
         sender_ref = _extract_sender_email(sender_email) or str(sender_header or '').strip()
         sender_requires_refresh = False
-        if current_vendor != normalized_sender_vendor:
+        invoice_confirms_current_vendor = _text_explicitly_mentions_vendor(text, current_vendor)
+        invoice_confirms_sender_vendor = _text_explicitly_mentions_vendor(text, normalized_sender_vendor)
+        if (
+            current_vendor
+            and current_vendor != normalized_sender_vendor
+            and invoice_confirms_current_vendor
+            and not invoice_confirms_sender_vendor
+        ):
+            cb(
+                f"  Preserving invoice-detected vendor {current_vendor}; "
+                f"sender {sender_ref} mapped to {normalized_sender_vendor} "
+                f"but the invoice text explicitly names {current_vendor}."
+            )
+        elif current_vendor != normalized_sender_vendor:
             if current_vendor:
                 cb(
                     f"  Vendor overridden from sender {sender_ref}: "
