@@ -2962,6 +2962,15 @@ def _extract_power_stroke_ship_to_lines(filepath):
     )
 
 
+def _extract_redhead_ship_to_lines(filepath):
+    """Extract Red-Head's right-hand Ship To column from the Bill To / Ship To block."""
+    return _extract_side_by_side_ship_to_lines(
+        filepath,
+        header_pattern=r'\bBill\s+To\s+Ship\s+To\b',
+        stop_pattern=r'\bP\.?O\.?\s+No\.?\s+Terms\s+Ship\s+Via\b|\bItem\s+Description\b',
+    )
+
+
 def _extract_hamilton_ship_to_lines(filepath):
     """Extract Hamilton Cams ship-to lines."""
     return _extract_side_by_side_ship_to_lines(
@@ -7053,6 +7062,8 @@ def parse_invoice(
         ship_to_lines = _extract_mishimoto_ship_to_lines(filepath)
     elif _is_power_stroke_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_power_stroke_ship_to_lines(filepath)
+    elif _is_redhead_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_redhead_ship_to_lines(filepath)
     elif _is_hamilton_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_hamilton_ship_to_lines(filepath)
     elif _is_bosch_vendor_name(data.get('vendor', '')):
