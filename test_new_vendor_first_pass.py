@@ -275,9 +275,9 @@ class NewVendorFirstPassTests(unittest.TestCase):
             'Carli Suspension - $10 DS Fee',
         )
 
-    def test_power_distributing_and_daystar_skip_global_stock_collapse(self):
+    def test_power_distributing_skips_global_stock_collapse_but_daystar_uses_ship_to(self):
         self.assertFalse(_allow_global_ship_to_stock_detection('Power Distributing'))
-        self.assertFalse(_allow_global_ship_to_stock_detection('Daystar'))
+        self.assertTrue(_allow_global_ship_to_stock_detection('Daystar'))
         self.assertTrue(_allow_global_ship_to_stock_detection('Power Stroke Products'))
 
     def test_power_stroke_products_credit_card_and_will_call(self):

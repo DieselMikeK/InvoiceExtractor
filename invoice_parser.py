@@ -340,6 +340,8 @@ def _vendor_text_aliases(vendor_name):
 def _text_explicitly_mentions_vendor(text, vendor_name):
     if not text or not vendor_name:
         return False
+    if not validate_vendor_name(vendor_name):
+        return False
     return bool(_find_vendor_in_text_list(text, _vendor_text_aliases(vendor_name)))
 
 
@@ -665,6 +667,12 @@ def validate_vendor_name(text):
     if not text or len(text) < 2 or len(text) > 80:
         return False
     if not re.search(r'[A-Za-z]', text):
+        return False
+    if re.match(
+        r'^\s*(?:Attn|Attention|Tracking|Reference|Ship\s+Via|Customer\s+No|Sales\s+Account\s+Number)\b\s*:?',
+        str(text or ''),
+        re.IGNORECASE,
+    ):
         return False
     if re.match(r'^\s*Printed\s+\d{1,2}/\d{1,2}/\d{2,4}\b', str(text or ''), re.IGNORECASE):
         return False
@@ -2245,7 +2253,7 @@ def _is_daystar_vendor_name(name):
 
 def _allow_global_ship_to_stock_detection(vendor_name):
     """Return True when generic ship-to stock/will-call detection should run."""
-    if _is_pd_vendor_name(vendor_name) or _is_daystar_vendor_name(vendor_name):
+    if _is_pd_vendor_name(vendor_name):
         return False
     return True
 
@@ -3026,6 +3034,16 @@ def _extract_hamilton_ship_to_lines(filepath):
         filepath,
         header_pattern=r'\bBill\s+To\s+Ship\s+To\b',
         stop_pattern=r'\bTracking\b|\bQuantity\b',
+    )
+
+
+def _extract_daystar_ship_to_lines(filepath):
+    """Extract Daystar's left-hand Ship To column without Bill To spillover."""
+    return _extract_side_by_side_ship_to_lines(
+        filepath,
+        header_pattern=r'\bShip\s+To\s+Bill\s+To\b',
+        stop_pattern=r'\bTracking#?\b|\bItem\s+Customer\b',
+        right_boundary_token='bill',
     )
 
 
@@ -6586,6 +6604,12 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
         if customer:
             data['customer'] = customer
 
+    elif _is_daystar_vendor_name(vendor_name):
+        ship_to_lines = _extract_daystar_ship_to_lines(filepath)
+        customer = _customer_name_from_ship_to_lines(ship_to_lines)
+        if customer:
+            data['customer'] = customer
+
     elif _is_poly_vendor_name(vendor_name):
         ship_to_lines = _extract_poly_ship_to_lines(filepath)
         customer = _customer_name_from_ship_to_lines(ship_to_lines)
@@ -7140,6 +7164,8 @@ def parse_invoice(
         ship_to_lines = _extract_redhead_ship_to_lines(filepath)
     elif _is_hamilton_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_hamilton_ship_to_lines(filepath)
+    elif _is_daystar_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_daystar_ship_to_lines(filepath)
     elif _is_bosch_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_bosch_ship_to_lines(filepath)
     elif _is_diesel_forward_vendor_name(data.get('vendor', '')):

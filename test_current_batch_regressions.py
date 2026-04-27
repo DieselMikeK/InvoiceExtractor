@@ -3,6 +3,7 @@ import os
 import unittest
 
 from invoice_parser import (
+    _text_explicitly_mentions_vendor,
     infer_vendor_from_email_metadata,
     parse_invoice,
     validate_vendor_name,
@@ -39,6 +40,16 @@ class CurrentBatchRegressionTests(unittest.TestCase):
 
     def test_printed_timestamp_is_not_a_vendor_name(self):
         self.assertFalse(validate_vendor_name('Printed 04/23/2026 12:42:05 PM'))
+
+    def test_label_like_lines_are_not_vendor_names(self):
+        self.assertFalse(validate_vendor_name('Tracking: 1Z351FW60375659526'))
+        self.assertFalse(validate_vendor_name('Attn: Josh'))
+        self.assertFalse(
+            _text_explicitly_mentions_vendor(
+                'Tracking: 1Z351FW60375659526',
+                'Tracking: 1Z351FW60375659526',
+            )
+        )
 
     @unittest.skipUnless(
         os.path.exists(os.path.join(CURRENT_BATCH_DIR, 'INVOICE 122605 04_23_26 09_42_55 940.PDF')),
@@ -103,6 +114,61 @@ class CurrentBatchRegressionTests(unittest.TestCase):
 
         self.assertFalse(data.get('stock_order'))
         self.assertEqual(data.get('customer'), 'YOSVANI DIAZ')
+
+    @unittest.skipUnless(
+        os.path.exists(os.path.join(REPO_ROOT, 'Invoices', 'invoices_4-27_2', 'INVOICE 122685 04_24_26 09_25_27 899.PDF')),
+        'current 4-27_2 Carli invoice batch not available',
+    )
+    def test_carli_tracking_line_does_not_block_sender_vendor(self):
+        pdf_path = os.path.join(REPO_ROOT, 'Invoices', 'invoices_4-27_2', 'INVOICE 122685 04_24_26 09_25_27 899.PDF')
+        meta = _load_sidecar(pdf_path)
+
+        data = parse_invoice(
+            pdf_path,
+            sender_email=meta.get('sender_email', ''),
+            sender_header=meta.get('sender_header', ''),
+            sender_subject=meta.get('subject', ''),
+            sender_message_text=meta.get('message_text', ''),
+        )
+
+        self.assertFalse(data.get('not_an_invoice'))
+        self.assertEqual(data.get('vendor'), 'Carli Suspension - $10 DS Fee')
+        self.assertEqual(data.get('invoice_number'), '122685')
+        self.assertEqual(data.get('po_number'), '0063442')
+        self.assertGreaterEqual(len(data.get('line_items') or []), 1)
+
+    @unittest.skipUnless(
+        os.path.exists(os.path.join(REPO_ROOT, 'Invoices', 'invoices_4-27', '2146721-Customer-Copy.pdf')),
+        'current 4-27 Serra invoice batch not available',
+    )
+    def test_serra_attn_line_does_not_block_sender_vendor(self):
+        pdf_path = os.path.join(REPO_ROOT, 'Invoices', 'invoices_4-27', '2146721-Customer-Copy.pdf')
+        meta = _load_sidecar(pdf_path)
+
+        data = parse_invoice(
+            pdf_path,
+            sender_email=meta.get('sender_email', ''),
+            sender_header=meta.get('sender_header', ''),
+            sender_subject=meta.get('subject', ''),
+            sender_message_text=meta.get('message_text', ''),
+        )
+
+        self.assertEqual(data.get('vendor'), 'Serra Chrysler Dodge Ram Jeep of Traverse City')
+        self.assertEqual(data.get('invoice_number'), '2146721')
+        self.assertEqual(data.get('customer'), 'DANIEL MULLENBACH')
+
+    @unittest.skipUnless(
+        os.path.exists(os.path.join(REPO_ROOT, 'Invoices', 'invoices_4-27', 'Invoice_I472020_1777072161408.pdf')),
+        'current 4-27 Daystar invoice batch not available',
+    )
+    def test_daystar_uses_left_ship_to_for_stock_detection(self):
+        pdf_path = os.path.join(REPO_ROOT, 'Invoices', 'invoices_4-27', 'Invoice_I472020_1777072161408.pdf')
+
+        data = parse_invoice(pdf_path)
+
+        self.assertEqual(data.get('vendor'), 'Daystar')
+        self.assertFalse(data.get('stock_order'))
+        self.assertEqual(data.get('customer'), 'Jon Kineshanko')
 
 
 if __name__ == '__main__':
