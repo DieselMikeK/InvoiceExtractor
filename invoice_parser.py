@@ -8,6 +8,7 @@ import os
 import sys
 import re
 import csv
+import json
 from email.utils import parseaddr
 from datetime import datetime, timedelta
 import pdfplumber
@@ -6906,6 +6907,210 @@ def _refresh_invoice_for_resolved_vendor(data, text, filepath, vendor_name):
             data['shipping_description'] = desc
 
     return _apply_vendor_specific_overrides(data, text, filepath)
+
+
+def _normalize_email_body_text(text):
+    value = str(text or '')
+    value = value.replace('\u202f', ' ').replace('\xa0', ' ')
+    value = re.sub(r'\r\n?', '\n', value)
+    value = re.sub(r'[ \t]+', ' ', value)
+    value = re.sub(r'\n{3,}', '\n\n', value)
+    return value.strip()
+
+
+def _parse_email_body_date(value):
+    text = re.sub(r'\s+', ' ', str(value or '')).strip()
+    if not text:
+        return ''
+    match = re.search(
+        r'\b([A-Z][a-z]{2,8})\s+(\d{1,2}),\s*(\d{4})\b',
+        text,
+    )
+    if not match:
+        return ''
+    for fmt in ('%B %d %Y', '%b %d %Y'):
+        try:
+            parsed = datetime.strptime(
+                f"{match.group(1)} {match.group(2)} {match.group(3)}",
+                fmt,
+            )
+            return f"{parsed.month}/{parsed.day}/{parsed.year}"
+        except ValueError:
+            continue
+    return ''
+
+
+def _extract_block_between_labels(text, start_label, end_labels):
+    lines = [line.strip() for line in str(text or '').splitlines()]
+    start_idx = None
+    for idx, line in enumerate(lines):
+        if re.fullmatch(start_label, line, re.IGNORECASE):
+            start_idx = idx + 1
+            break
+    if start_idx is None:
+        return []
+
+    result = []
+    for line in lines[start_idx:]:
+        if any(re.fullmatch(label, line, re.IGNORECASE) for label in end_labels):
+            break
+        if line:
+            result.append(line)
+    return result
+
+
+def _extract_sb_body_order_items(text):
+    summary_match = re.search(
+        r'(?is)\bOrder\s+summary\b(.+?)(?:\bSubtotal\b|\bCustomer\s+information\b|\bTotal\s+due\b)',
+        text,
+    )
+    search_text = summary_match.group(1) if summary_match else text
+    lines = [line.strip() for line in search_text.splitlines() if line.strip()]
+    items = []
+    seen = set()
+
+    for idx, line in enumerate(lines):
+        if re.search(r'(?i)\b(Subtotal|Shipping|Taxes?|Total paid|Total due)\b', line):
+            continue
+        match = re.search(r'(?i)(.*?)\s*[x×]\s*(\d+)\s+\$?([\d,]+\.?\d{2})\b', line)
+        if match:
+            description = match.group(1).strip(' -')
+            quantity = match.group(2)
+            amount = _clean_price(match.group(3))
+        else:
+            price_match = re.search(r'\$?([\d,]+\.?\d{2})\b', line)
+            if not price_match:
+                continue
+            quantity = '1'
+            amount = _clean_price(price_match.group(1))
+            description = re.sub(r'\$?[\d,]+\.?\d{2}\b', '', line).strip(' -')
+
+        if not description and idx > 0:
+            description = lines[idx - 1].strip()
+        if not description:
+            continue
+
+        variant = ''
+        if idx + 1 < len(lines):
+            next_line = lines[idx + 1].strip()
+            if (
+                next_line
+                and not re.search(r'\$?[\d,]+\.?\d{2}\b', next_line)
+                and not re.search(r'(?i)\b(Subtotal|Shipping|Taxes?|Total paid|Total due)\b', next_line)
+            ):
+                variant = next_line
+        full_description = f"{description} - {variant}" if variant else description
+        key = (full_description.lower(), quantity, amount)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        unit_price = amount
+        try:
+            qty_num = float(quantity)
+            amount_num = float(amount)
+            if qty_num:
+                unit_price = f"{amount_num / qty_num:.2f}"
+        except (TypeError, ValueError):
+            pass
+
+        items.append({
+            'item_number': '',
+            'quantity': _normalize_qty(quantity),
+            'units': 'Each',
+            'description': full_description,
+            'unit_price': unit_price,
+            'amount': amount,
+        })
+
+    return items
+
+
+def parse_email_invoice(filepath, status_callback=None):
+    """Parse a saved no-attachment email body invoice source."""
+    cb = status_callback or (lambda msg, tag=None: None)
+    filename = os.path.basename(filepath)
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            payload = json.load(f)
+    except Exception as e:
+        cb(f"  Could not read email invoice source {filename}: {e}", "error")
+        return None
+
+    parser = str(payload.get('parser') or '').strip()
+    if parser != 'sb_shopify_order':
+        cb(f"  Unsupported email invoice parser for {filename}: {parser}", "error")
+        return None
+
+    text = _normalize_email_body_text(payload.get('message_text', ''))
+    subject = str(payload.get('subject') or '')
+    combined = f"{subject}\n{text}"
+    cb(f"  Parsing S&B body invoice data from {filename}...")
+
+    order_match = re.search(r'(?i)\bOrder\s*#\s*(\d+)', combined)
+    po_match = re.search(r'(?i)\bPO\s+Number\s*#?\s*(\d+)', combined)
+    date_match = re.search(r'(?im)^\s*Date:\s*(.+)$', text)
+    due_match = re.search(r'(?i)\bTotal\s+due\s+([A-Z][a-z]+\s+\d{1,2},\s*\d{4})', text)
+    subtotal_match = re.search(r'(?i)\bSubtotal\b\s*\$?([\d,]+\.?\d{2})', text)
+    shipping_match = re.search(r'(?i)\bShipping\b\s*\$?([\d,]+\.?\d{2})', text)
+    total_match = re.search(
+        r'(?i)\bTotal\s+due\s+[A-Z][a-z]+\s+\d{1,2},\s*\d{4}\s*\$?([\d,]+\.?\d{2})',
+        text,
+    )
+    shipping_method_match = re.search(
+        r'(?is)\bShipping\s+method\b\s*([^\n]+)',
+        text,
+    )
+
+    shipping_address = _extract_block_between_labels(
+        text,
+        r'Shipping address',
+        [r'Billing address', r'Location', r'Payment', r'Shipping method'],
+    )
+    customer = shipping_address[0] if shipping_address else ''
+    line_items = _extract_sb_body_order_items(text)
+
+    data = {
+        'invoice_number': order_match.group(1) if order_match else '',
+        'vendor': 'S&B Filters',
+        'vendor_address': get_vendor_default_address('S&B Filters'),
+        'customer': customer,
+        'date': _parse_email_body_date(date_match.group(1) if date_match else ''),
+        'due_date': _parse_email_body_date(due_match.group(1) if due_match else ''),
+        'terms': 'Net 30',
+        'po_number': po_match.group(1) if po_match else '',
+        'tracking_number': '',
+        'shipping_method': shipping_method_match.group(1).strip() if shipping_method_match else '',
+        'ship_date': '',
+        'shipping_tax_code': '',
+        'shipping_tax_rate': '',
+        'subtotal': _clean_price(subtotal_match.group(1)) if subtotal_match else '',
+        'shipping_cost': _clean_price(shipping_match.group(1)) if shipping_match else '',
+        'shipping_description': 'Shipping',
+        'total': _clean_price(total_match.group(1)) if total_match else '',
+        'line_items': line_items,
+        'source_file': filename,
+        'raw_text': text,
+    }
+
+    has_invoice_signal = bool(data['invoice_number'] or data['po_number'] or line_items)
+    if not has_invoice_signal:
+        cb(f"  Not an invoice (no order no, PO, or line items): {filename}", "warning")
+        return {'not_an_invoice': True}
+
+    if not data['total'] and data['subtotal']:
+        try:
+            total = float(data['subtotal']) + float(data['shipping_cost'] or 0)
+            data['total'] = f"{total:.2f}"
+        except (TypeError, ValueError):
+            pass
+
+    filled = sum(
+        1 for key, value in data.items()
+        if key not in {'source_file', 'raw_text', 'line_items'} and value
+    )
+    cb(f"  Extracted {filled} fields + {len(line_items)} line item(s) from {filename}", "success")
+    return data
 
 
 def parse_invoice(

@@ -1,7 +1,45 @@
 import os
+import json
+import tempfile
 import unittest
 
-from invoice_parser import infer_vendor_from_sender, parse_invoice
+from invoice_parser import infer_vendor_from_sender, parse_email_invoice, parse_invoice
+
+
+SB_BODY = """---------- Forwarded message ---------
+From: S&B <store+69841617189@t.shopifyemail.com>
+Date: Mon, Apr 27, 2026 at 2:30 PM
+Subject: Order #743234 Confirmed
+To: <ap@dieselpowerproducts.com>
+
+ORDER #743234
+PO NUMBER #0064464
+Hi Power Products. Thank you for your purchase!
+Order summary
+Cold Air Intake for 2006-2007 Chevy / GMC Duramax LLY-LBZ 6.6L x 1 $253.93
+Dry Extendable
+Subtotal $253.93
+Shipping $12.00
+Taxes $0.00
+Total paid today $0.00 USD
+Total due May 27, 2026 $265.93 USD
+Customer information
+Shipping address
+Donald Ortiz
+5041 Brighton Hills Dr NE
+Rio Rancho NM 87144
+Billing address
+Josh Ulrich
+Diesel Power Products DBA Power Products Unlimited, Inc. 505
+5204 East Broadway Avenue
+Spokane Valley WA 99212
+Payment
+Net 30: Due May 27, 2026
+Shipping method
+Ground
+If you have any questions, reply to this email or contact us at
+customerservice@sbfilters.com
+"""
 
 
 class SBInvoiceParserTests(unittest.TestCase):
@@ -32,6 +70,37 @@ class SBInvoiceParserTests(unittest.TestCase):
                     infer_vendor_from_sender(sender_email=sender_email, sender_header=sender_header),
                     'KC Turbos',
                 )
+
+    def test_sb_shopify_body_invoice_parser(self):
+        payload = {
+            'type': 'email_body_invoice',
+            'parser': 'sb_shopify_order',
+            'subject': 'Order #743234 Confirmed',
+            'message_text': SB_BODY,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'SB_Order_743234.email.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f)
+
+            invoice_data = parse_email_invoice(path)
+
+        self.assertEqual(invoice_data['vendor'], 'S&B Filters')
+        self.assertEqual(invoice_data['invoice_number'], '743234')
+        self.assertEqual(invoice_data['po_number'], '0064464')
+        self.assertEqual(invoice_data['date'], '4/27/2026')
+        self.assertEqual(invoice_data['due_date'], '5/27/2026')
+        self.assertEqual(invoice_data['customer'], 'Donald Ortiz')
+        self.assertEqual(invoice_data['shipping_method'], 'Ground')
+        self.assertEqual(invoice_data['subtotal'], '253.93')
+        self.assertEqual(invoice_data['shipping_cost'], '12.00')
+        self.assertEqual(invoice_data['total'], '265.93')
+        self.assertEqual(len(invoice_data['line_items']), 1)
+        self.assertEqual(invoice_data['line_items'][0]['quantity'], '1')
+        self.assertEqual(invoice_data['line_items'][0]['unit_price'], '253.93')
+        self.assertIn('Cold Air Intake', invoice_data['line_items'][0]['description'])
+        self.assertIn('Dry Extendable', invoice_data['line_items'][0]['description'])
     def test_sb_shipping_cost_handles_nested_parentheses(self):
         cases = {
             'S&B I464016.pdf': '42.00',

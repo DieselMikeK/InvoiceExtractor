@@ -2,6 +2,7 @@
 import os
 import io
 import csv
+import json
 import base64
 import pickle
 import re
@@ -196,6 +197,52 @@ def _extract_forwarded_message_metadata(payload, snippet=''):
         return sender_email, sender_header, subject
 
     return '', '', ''
+
+
+def _looks_like_sb_body_invoice(message_text, subject=''):
+    """Return True for S&B Shopify-style no-attachment body invoices."""
+    text = str(message_text or '')
+    if not text.strip():
+        return False
+
+    has_forwarded_from_sb = bool(
+        re.search(r'(?im)^\s*From:\s*S\s*&\s*B\b', text)
+    )
+    if not has_forwarded_from_sb:
+        return False
+
+    has_sb_confirmation = bool(
+        re.search(r'(?i)customerservice@sbfilters\.com|@sbfilters\.com|\bchoosing\s+S\s*&\s*B\b', text)
+    )
+    has_order_structure = all(
+        re.search(pattern, text, re.IGNORECASE)
+        for pattern in (
+            r'\bOrder\s*#\s*\d+',
+            r'\bPO\s+Number\s*#?\s*\d+',
+            r'\bOrder\s+summary\b',
+            r'\bSubtotal\b\s*\$?[\d,]+\.\d{2}',
+            r'\bShipping\b\s*\$?[\d,]+\.\d{2}',
+            r'\bTotal\s+due\b',
+        )
+    )
+    if not has_order_structure:
+        return False
+
+    subject_text = str(subject or '')
+    has_subject_order = bool(re.search(r'(?i)\bOrder\s*#\s*\d+\s+Confirmed\b', subject_text + '\n' + text))
+    return has_sb_confirmation or has_subject_order
+
+
+def _extract_sb_body_order_number(message_text, subject=''):
+    text = f"{subject or ''}\n{message_text or ''}"
+    match = re.search(r'(?i)\bOrder\s*#\s*(\d+)', text)
+    return match.group(1).strip() if match else ''
+
+
+def _safe_source_filename(value):
+    safe = re.sub(r'[^A-Za-z0-9._-]+', '_', str(value or '').strip())
+    safe = safe.strip('._-')
+    return safe or 'email_invoice'
 
 
 def _message_internal_timestamp(message):
@@ -467,6 +514,44 @@ class GmailClient:
 
         return safe_filename
 
+    def save_body_invoice_source(
+        self,
+        *,
+        parser,
+        msg_id,
+        subject,
+        sender_email,
+        sender_header,
+        message_text,
+    ):
+        """Save a no-attachment email invoice body as an auditable source file."""
+        order_number = _extract_sb_body_order_number(message_text, subject)
+        base_name = f"SB_Order_{order_number}" if order_number else f"SB_Email_{msg_id[:12]}"
+        safe_filename = _safe_source_filename(base_name) + '.email.json'
+        filepath = os.path.join(self.invoices_dir, safe_filename)
+
+        if os.path.exists(filepath):
+            name, ext = os.path.splitext(safe_filename)
+            counter = 1
+            while os.path.exists(filepath):
+                safe_filename = f"{name}_{counter}{ext}"
+                filepath = os.path.join(self.invoices_dir, safe_filename)
+                counter += 1
+
+        payload = {
+            'type': 'email_body_invoice',
+            'parser': parser,
+            'message_id': msg_id,
+            'sender_email': sender_email,
+            'sender_header': sender_header,
+            'subject': subject,
+            'message_text': message_text,
+        }
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+        return safe_filename
+
     def find_attachments_in_parts(self, parts, msg_id):
         """Recursively find attachments in message parts."""
         attachments = []
@@ -622,6 +707,36 @@ class GmailClient:
                             )
                     else:
                         break
+                elif _looks_like_sb_body_invoice(message_text, subject):
+                    self.status_callback(
+                        f"  Email: \"{subject}\" - S&B body invoice detected (no attachment)"
+                    )
+                    saved_name = self.save_body_invoice_source(
+                        parser='sb_shopify_order',
+                        msg_id=msg_id,
+                        subject=subject,
+                        sender_email=sender_email,
+                        sender_header=sender_header,
+                        message_text=message_text,
+                    )
+                    self.status_callback(
+                        f"    Saved body invoice source: {saved_name}", "success"
+                    )
+                    downloaded_attachments.append({
+                        'filename': saved_name,
+                        'sender_email': sender_email,
+                        'sender_header': sender_header,
+                        'subject': subject,
+                        'message_text': message_text,
+                        'message_id': msg_id,
+                        'email_body_invoice': True,
+                    })
+                    try:
+                        self._add_label_to_message(msg_id, self.processed_label_id)
+                    except Exception as label_err:
+                        self.status_callback(
+                            f"    Warning: couldn't add label: {label_err}", "warning"
+                        )
 
             except Exception as e:
                 self.status_callback(

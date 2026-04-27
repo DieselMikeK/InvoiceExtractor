@@ -1,9 +1,46 @@
+import json
 import os
 import tempfile
 import unittest
 import base64
 
 from gmail_client import GmailClient, _message_matches_time_filter
+
+
+SB_BODY = """---------- Forwarded message ---------
+From: S&B <store+69841617189@t.shopifyemail.com>
+Date: Mon, Apr 27, 2026 at 2:30 PM
+Subject: Order #743234 Confirmed
+To: <ap@dieselpowerproducts.com>
+
+ORDER #743234
+PO NUMBER #0064464
+Hi Power Products. Thank you for your purchase!
+Order summary
+Cold Air Intake for 2006-2007 Chevy / GMC Duramax LLY-LBZ 6.6L x 1 $253.93
+Dry Extendable
+Subtotal $253.93
+Shipping $12.00
+Taxes $0.00
+Total paid today $0.00 USD
+Total due May 27, 2026 $265.93 USD
+Customer information
+Shipping address
+Donald Ortiz
+5041 Brighton Hills Dr NE
+Rio Rancho NM 87144
+Billing address
+Josh Ulrich
+Diesel Power Products DBA Power Products Unlimited, Inc. 505
+5204 East Broadway Avenue
+Spokane Valley WA 99212
+Payment
+Net 30: Due May 27, 2026
+Shipping method
+Ground
+If you have any questions, reply to this email or contact us at
+customerservice@sbfilters.com
+"""
 
 
 class GmailClientDownloadTests(unittest.TestCase):
@@ -199,6 +236,78 @@ class GmailClientDownloadTests(unittest.TestCase):
         self.assertEqual(total_emails, 1)
         self.assertEqual(new_emails, 1)
         self.assertEqual(labeled, [])
+
+    def test_no_attachment_sb_body_invoice_is_saved_and_labeled(self):
+        encoded_body = base64.urlsafe_b64encode(
+            SB_BODY.encode('utf-8')
+        ).decode('ascii').rstrip('=')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = GmailClient(tmpdir, data_dir=tmpdir, invoices_dir=tmpdir)
+            client.processed_label_id = 'label-1'
+
+            labeled = []
+
+            client.fetch_all_message_ids = lambda query=None: [{'id': 'msg-sb'}]
+            client.get_message_details = lambda msg_id: {
+                'payload': {
+                    'headers': [
+                        {'name': 'Subject', 'value': 'Fwd: Order #743234 Confirmed'},
+                        {'name': 'From', 'value': 'Accounts Payable <ap@dieselpowerproducts.com>'},
+                    ],
+                    'parts': [
+                        {
+                            'mimeType': 'text/plain',
+                            'body': {'data': encoded_body},
+                        },
+                    ],
+                }
+            }
+            client._add_label_to_message = lambda msg_id, label_id: labeled.append((msg_id, label_id))
+
+            downloaded, total_emails, new_emails = client.fetch_and_download_new_attachments()
+
+            saved_path = os.path.join(tmpdir, downloaded[0]['filename'])
+            with open(saved_path, 'r', encoding='utf-8') as f:
+                saved_payload = json.load(f)
+
+        self.assertEqual(total_emails, 1)
+        self.assertEqual(new_emails, 1)
+        self.assertEqual(labeled, [('msg-sb', 'label-1')])
+        self.assertEqual(len(downloaded), 1)
+        self.assertEqual(downloaded[0]['filename'], 'SB_Order_743234.email.json')
+        self.assertTrue(downloaded[0]['email_body_invoice'])
+        self.assertEqual(saved_payload['parser'], 'sb_shopify_order')
+        self.assertIn('customerservice@sbfilters.com', saved_payload['message_text'])
+
+    def test_sb_body_text_with_attachment_is_not_saved_as_body_invoice(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = GmailClient(tmpdir, data_dir=tmpdir, invoices_dir=tmpdir)
+            client.processed_label_id = 'label-1'
+
+            client.fetch_all_message_ids = lambda query=None: [{'id': 'msg-sb'}]
+            client.get_message_details = lambda msg_id: {
+                'payload': {
+                    'headers': [
+                        {'name': 'Subject', 'value': 'Fwd: Order #743234 Confirmed'},
+                        {'name': 'From', 'value': 'Accounts Payable <ap@dieselpowerproducts.com>'},
+                    ],
+                    'parts': [
+                        {'filename': 'daystar.pdf', 'body': {'attachmentId': 'att-1'}},
+                    ],
+                }
+            }
+            client.find_attachments_in_parts = lambda parts, msg_id: [
+                {'filename': 'daystar.pdf', 'attachment_id': 'att-1', 'msg_id': msg_id},
+            ]
+            client.download_attachment = lambda msg_id, attachment_id, filename: filename
+            client._add_label_to_message = lambda msg_id, label_id: None
+
+            downloaded, _, _ = client.fetch_and_download_new_attachments()
+
+        self.assertEqual(len(downloaded), 1)
+        self.assertEqual(downloaded[0]['filename'], 'daystar.pdf')
+        self.assertNotIn('email_body_invoice', downloaded[0])
 
 
 if __name__ == '__main__':

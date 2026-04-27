@@ -42,7 +42,7 @@ try:
     from core_detection import is_core_candidate
 except ImportError:
     from app.core_detection import is_core_candidate
-from invoice_parser import parse_invoice, OCR_AVAILABLE
+from invoice_parser import parse_email_invoice, parse_invoice, OCR_AVAILABLE
 from spreadsheet_writer import (
     COLUMNS, write_invoice_to_spreadsheet, write_not_invoice_row,
     read_spreadsheet_rows,
@@ -598,7 +598,7 @@ class InvoiceExtractorGUI:
         self.root = root
         self.root.title("Invoice Extractor")
         self._set_window_icon()
-        self.root.geometry("750x650")
+        self.root.geometry("750x680")
         self.root.resizable(True, True)
 
         self.base_dir = get_base_dir()
@@ -1887,19 +1887,21 @@ class InvoiceExtractorGUI:
 
         self.date_filter_check = ttk.Checkbutton(
             filter_frame,
-            text="Filter by date range",
+            text="Filter by date and time range",
             variable=self.date_filter_var,
             command=self._on_date_filter_toggle
         )
         self.date_filter_check.grid(row=0, column=0, sticky='w')
 
-        ttk.Label(filter_frame, text="From (YYYY/MM/DD)").grid(row=0, column=1, padx=(10, 2))
+        ttk.Label(filter_frame, text="From date").grid(row=0, column=1, padx=(10, 2))
         self.date_from_entry = ttk.Entry(filter_frame, textvariable=self.date_from_var, width=12)
-        self.date_from_entry.grid(row=0, column=2, padx=(0, 10))
+        self.date_from_entry.grid(row=0, column=2, padx=(0, 6))
 
-        ttk.Label(filter_frame, text="To (YYYY/MM/DD)").grid(row=0, column=3, padx=(0, 2))
+        ttk.Label(filter_frame, text="time").grid(row=0, column=3, padx=(0, 2))
+        ttk.Label(filter_frame, text="To date").grid(row=0, column=5, padx=(10, 2))
         self.date_to_entry = ttk.Entry(filter_frame, textvariable=self.date_to_var, width=12)
-        self.date_to_entry.grid(row=0, column=4)
+        self.date_to_entry.grid(row=0, column=6, padx=(0, 6))
+        ttk.Label(filter_frame, text="time").grid(row=0, column=7, padx=(0, 2))
         self.date_from_entry.bind(
             "<FocusIn>", lambda _e: self._open_date_picker_at(
                 self.date_from_var, self.date_from_entry, "Select FROM Date"
@@ -1922,7 +1924,7 @@ class InvoiceExtractorGUI:
             disabledforeground='#7a7a7a',
             fg='#7a7a7a',
         )
-        self.date_from_time_entry.grid(row=0, column=3, padx=(0, 10))
+        self.date_from_time_entry.grid(row=0, column=4, padx=(0, 6))
         self.date_from_time_entry.bind(
             "<FocusIn>",
             lambda _e: self._open_time_picker_at(
@@ -1961,7 +1963,7 @@ class InvoiceExtractorGUI:
             disabledforeground='#7a7a7a',
             fg='#7a7a7a',
         )
-        self.date_to_time_entry.grid(row=0, column=6)
+        self.date_to_time_entry.grid(row=0, column=8)
         self.date_to_time_entry.bind(
             "<FocusIn>",
             lambda _e: self._open_time_picker_at(
@@ -1992,7 +1994,7 @@ class InvoiceExtractorGUI:
         self._set_date_to_time_display_value('')
 
         today_time_row = ttk.Frame(filter_frame)
-        today_time_row.grid(row=1, column=0, columnspan=7, sticky='w', pady=(6, 0))
+        today_time_row.grid(row=1, column=0, columnspan=9, sticky='w', pady=(6, 0))
 
         self.today_time_filter_check = ttk.Checkbutton(
             today_time_row,
@@ -2045,19 +2047,22 @@ class InvoiceExtractorGUI:
         )
         self._set_today_time_placeholder()
 
+        today_full_day_row = ttk.Frame(filter_frame)
+        today_full_day_row.grid(row=2, column=0, columnspan=9, sticky='w', pady=(4, 0))
+
         self.today_filter_check = ttk.Checkbutton(
-            today_time_row,
+            today_full_day_row,
             text="All from Today (Full Day)",
             variable=self.today_filter_var,
             command=self._on_today_filter_toggle
         )
-        self.today_filter_check.pack(side=tk.LEFT, padx=(14, 0))
+        self.today_filter_check.pack(side=tk.LEFT)
 
         ttk.Label(
             filter_frame,
             text="Filtering by date may download already downloaded invoices.",
             foreground='orange'
-        ).grid(row=2, column=0, columnspan=7, sticky='w', pady=(4, 0))
+        ).grid(row=3, column=0, columnspan=9, sticky='w', pady=(4, 0))
 
         # Buttons frame
         btn_frame = ttk.Frame(main_frame)
@@ -2437,7 +2442,7 @@ class InvoiceExtractorGUI:
             all_invoice_files = []
             if os.path.exists(self.invoices_dir):
                 for f in os.listdir(self.invoices_dir):
-                    if f.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.tiff')):
+                    if f.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.email.json')):
                         all_invoice_files.append(f)
 
             if not all_invoice_files:
@@ -2494,14 +2499,17 @@ class InvoiceExtractorGUI:
                                 f"  No sender metadata found for {filename}; vendor detection will rely on invoice content.",
                                 "warning",
                             )
-                        invoice_data = parse_invoice(
-                            filepath,
-                            self.log,
-                            sender_email=sender_entry.get('sender_email', ''),
-                            sender_header=sender_entry.get('sender_header', ''),
-                            sender_subject=sender_entry.get('subject', ''),
-                            sender_message_text=sender_entry.get('message_text', ''),
-                        )
+                        if filename.lower().endswith('.email.json'):
+                            invoice_data = parse_email_invoice(filepath, self.log)
+                        else:
+                            invoice_data = parse_invoice(
+                                filepath,
+                                self.log,
+                                sender_email=sender_entry.get('sender_email', ''),
+                                sender_header=sender_entry.get('sender_header', ''),
+                                sender_subject=sender_entry.get('subject', ''),
+                                sender_message_text=sender_entry.get('message_text', ''),
+                            )
 
                         if invoice_data and invoice_data.get('not_an_invoice'):
                             write_not_invoice_row(self.output_file, source_path, self.log)
