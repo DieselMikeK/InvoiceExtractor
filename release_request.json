@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Support S\u0026B no-attachment body invoices by saving Shopify-style order emails as parseable sources, and update the date filter labels/layout.",
-    "requested_at":  "2026-04-27T22:42:20.6210327Z"
+    "notes":  "Fix S\u0026B body invoice item descriptions when Shopify puts the product name above the option and price line.",
+    "requested_at":  "2026-04-27T22:56:33.7210704Z"
 }
