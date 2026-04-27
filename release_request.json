@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix Fumoto invoices being marked as will call by using Fumoto\u0027s dedicated Ship To table for stock/will-call detection.",
-    "requested_at":  "2026-04-27T21:16:59.7096999Z"
+    "notes":  "Support S\u0026B no-attachment body invoices by saving Shopify-style order emails as parseable sources, and update the date filter labels/layout.",
+    "requested_at":  "2026-04-27T22:42:20.6210327Z"
 }
