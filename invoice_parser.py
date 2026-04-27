@@ -4946,6 +4946,12 @@ def _extract_pt_items_from_words(filepath):
 
 def _extract_fumoto_ship_to_name(filepath):
     """Extract the first ship-to line from Fumoto's dedicated SHIP TO table."""
+    lines = _extract_fumoto_ship_to_lines(filepath)
+    return lines[0].strip() if lines else ''
+
+
+def _extract_fumoto_ship_to_lines(filepath):
+    """Extract Fumoto's dedicated Ship To table lines."""
     for table in extract_tables_from_pdf(filepath):
         if not table:
             continue
@@ -4953,10 +4959,10 @@ def _extract_fumoto_ship_to_name(filepath):
         if header != 'ship to':
             continue
         if len(table) < 2 or not table[1]:
-            return ''
+            return []
         ship_block = str(table[1][0] or '').strip()
-        return ship_block.splitlines()[0].strip() if ship_block else ''
-    return ''
+        return [line.strip() for line in ship_block.splitlines() if line.strip()]
+    return []
 
 
 def _extract_fumoto_items_from_tables(filepath):
@@ -7194,6 +7200,8 @@ def parse_invoice(
         ship_to_lines = _extract_poly_ship_to_lines(filepath)
     elif _is_suspensionmaxx_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_sm_ship_to_lines(filepath)
+    elif _is_fumoto_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_fumoto_ship_to_lines(filepath)
 
     ship_to_is_ours = (
         _ship_to_our_address_from_lines(ship_to_lines)

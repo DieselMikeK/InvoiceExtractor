@@ -170,6 +170,33 @@ class CurrentBatchRegressionTests(unittest.TestCase):
         self.assertFalse(data.get('stock_order'))
         self.assertEqual(data.get('customer'), 'Jon Kineshanko')
 
+    @unittest.skipUnless(
+        os.path.exists(
+            os.path.join(
+                REPO_ROOT,
+                'Invoices',
+                'invoices_4-27',
+                'Invoice_Ticket63907_from_FUMOTO_ENGINEERING_OF_AMERICA_INC.pdf',
+            )
+        ),
+        'current 4-27 Fumoto invoice batch not available',
+    )
+    def test_fumoto_uses_ship_to_table_for_stock_detection(self):
+        pdf_path = os.path.join(
+            REPO_ROOT,
+            'Invoices',
+            'invoices_4-27',
+            'Invoice_Ticket63907_from_FUMOTO_ENGINEERING_OF_AMERICA_INC.pdf',
+        )
+
+        data = parse_invoice(pdf_path)
+
+        self.assertEqual(data.get('vendor'), 'Fumoto Engineering of America')
+        self.assertFalse(data.get('stock_order'))
+        self.assertEqual(data.get('customer'), 'Carl A. Rossi')
+        self.assertEqual(data.get('invoice_number'), 'Ticket-63907')
+        self.assertEqual(data.get('po_number'), '0063646')
+
 
 if __name__ == '__main__':
     unittest.main()
