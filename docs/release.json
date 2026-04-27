@@ -1,24 +1,24 @@
 {
-  "version": "1.2.51",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.51/InvoiceExtractor.exe",
-  "sha256": "f9148d43a8eba7d15d6a0f7dc9be3061de32291f9e69798c133b2cc38e20e134",
-  "notes": "Fix Fumoto invoices being marked as will call by using Fumoto's dedicated Ship To table for stock/will-call detection.",
-  "published_at": "04/27/2026 21:18:45",
+  "version": "1.2.52",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.52/InvoiceExtractor.exe",
+  "sha256": "a8d844fd1e2fbbee2d680e8b069d339971e327dbb2445621244547e2b8d112f2",
+  "notes": "Support S&B no-attachment body invoices by saving Shopify-style order emails as parseable sources, and update the date filter labels/layout.",
+  "published_at": "04/27/2026 22:44:20",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.51/InvoiceExtractor.exe",
-      "sha256": "f9148d43a8eba7d15d6a0f7dc9be3061de32291f9e69798c133b2cc38e20e134"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.52/InvoiceExtractor.exe",
+      "sha256": "a8d844fd1e2fbbee2d680e8b069d339971e327dbb2445621244547e2b8d112f2"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.51/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.52/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.51/update-InvoiceExtractorUpdater.exe",
-      "sha256": "98ff222820af938de0304b78d3dee690e294587aa09e1d1d7693cc92f5b112cc"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.52/update-InvoiceExtractorUpdater.exe",
+      "sha256": "f7ed4d4728911a37b4c3b8ec66fdec3af11770fdf6f0d33038951e7ce4afbe2b"
     }
   ]
 }
