@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix Carli detection in long forwarded emails and prevent Power Distributing/Daystar dropship invoices from being collapsed as stock or will-call orders.",
-    "requested_at":  "2026-04-27T20:01:57.9688301Z"
+    "notes":  "Fix Carli invoices being marked Not an Invoice when tracking lines are misread as vendors; fix Serra invoices where Attn: Josh blocked sender vendor detection; use Daystar\u0027s left Ship To column for stock/will-call detection.",
+    "requested_at":  "2026-04-27T20:27:03.8530205Z"
 }
