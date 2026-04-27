@@ -1,5 +1,6 @@
 """Helpers for app versioning and release-manifest based updates."""
 
+import base64
 import hashlib
 import json
 import os
@@ -23,8 +24,11 @@ UPDATER_RELEASE_RELATIVE_PATH = f"update/{UPDATER_EXECUTABLE_NAME}"
 VERSION_FILENAME = "VERSION"
 PRIMARY_RELEASE_RELATIVE_PATH = MAIN_EXECUTABLE_NAME
 DEFAULT_UPDATE_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/DieselMikeK/InvoiceExtractor/main/docs/release.json"
+    "https://api.github.com/repos/DieselMikeK/InvoiceExtractor/contents/docs/release.json?ref=main"
 )
+DEFAULT_UPDATE_MANIFEST_FALLBACK_URLS = [
+    "https://raw.githubusercontent.com/DieselMikeK/InvoiceExtractor/main/docs/release.json",
+]
 CERTIFI_CA_BUNDLE = certifi.where() if certifi else ""
 
 
@@ -257,6 +261,33 @@ def normalize_release_manifest(data, source_url=""):
     }
 
 
+def decode_release_manifest_payload(data):
+    """Decode supported manifest transport payloads into the underlying manifest JSON."""
+    if not isinstance(data, dict):
+        raise ValueError("Release manifest must be a JSON object.")
+
+    if "version" in data or "tag_name" in data:
+        return data
+
+    raw_content = data.get("content")
+    if raw_content is None:
+        return data
+
+    encoding = str(data.get("encoding") or "").strip().lower()
+    if encoding and encoding != "base64":
+        raise ValueError(f"Unsupported release manifest content encoding '{encoding}'.")
+
+    try:
+        decoded = base64.b64decode(str(raw_content))
+        nested_data = json.loads(decoded.decode("utf-8"))
+    except Exception as exc:
+        raise ValueError("Release manifest content payload could not be decoded.") from exc
+
+    if not isinstance(nested_data, dict):
+        raise ValueError("Decoded release manifest content must be a JSON object.")
+    return nested_data
+
+
 def find_release_file(manifest, relative_path):
     """Return a normalized manifest file entry by relative path, if present."""
     normalized_manifest = normalize_release_manifest(manifest)
@@ -269,16 +300,31 @@ def find_release_file(manifest, relative_path):
 
 def fetch_release_manifest(required_dir=None, timeout=5):
     """Fetch and parse the remote release manifest."""
-    url = get_update_manifest_url(required_dir)
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": f"{APP_NAME.replace(' ', '')}/UpdateCheck"},
-    )
-    with open_url_with_tls_fallback(req, timeout=timeout) as response:
-        charset = response.headers.get_content_charset() or "utf-8"
-        payload = response.read().decode(charset)
-    data = json.loads(payload)
-    return normalize_release_manifest(data, source_url=url)
+    configured_url = get_update_manifest_url(required_dir)
+    urls = [configured_url]
+    if configured_url == DEFAULT_UPDATE_MANIFEST_URL:
+        for fallback_url in DEFAULT_UPDATE_MANIFEST_FALLBACK_URLS:
+            if fallback_url not in urls:
+                urls.append(fallback_url)
+
+    last_error = None
+    for url in urls:
+        headers = {"User-Agent": f"{APP_NAME.replace(' ', '')}/UpdateCheck"}
+        if "api.github.com/" in url:
+            headers["Accept"] = "application/vnd.github+json"
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with open_url_with_tls_fallback(req, timeout=timeout) as response:
+                charset = response.headers.get_content_charset() or "utf-8"
+                payload = response.read().decode(charset)
+            data = decode_release_manifest_payload(json.loads(payload))
+            return normalize_release_manifest(data, source_url=url)
+        except Exception as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise last_error
+    raise ValueError("No release manifest URLs are configured.")
 
 
 def compute_file_sha256(path):

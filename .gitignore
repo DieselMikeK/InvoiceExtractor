@@ -17,6 +17,9 @@ __pycache__/
 invoices/
 invoices_output*.xlsx
 training_output*.xlsx
+training_audit_parse.json
+training_invoice_cost_compare.json
+training_margin_audit_results.json
 ~$*.xlsx
 processed_log.json
 invoice_history.csv

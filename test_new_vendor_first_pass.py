@@ -2,7 +2,13 @@ import os
 import unittest
 from unittest import mock
 
-from invoice_parser import infer_vendor_from_email_metadata, infer_vendor_from_sender, parse_invoice
+from gmail_client import _extract_message_context_text
+from invoice_parser import (
+    _allow_global_ship_to_stock_detection,
+    infer_vendor_from_email_metadata,
+    infer_vendor_from_sender,
+    parse_invoice,
+)
 
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,7 +19,7 @@ class NewVendorFirstPassTests(unittest.TestCase):
     def test_sender_aliases_cover_carli_hamilton_and_icon(self):
         cases = [
             ('sales@carlisuspension.com', '', 'Carli Suspension - $10 DS Fee'),
-            ('hamiltoncamsales@gmail.com', '', 'Hamilton Cams - $20 Dropship Fee'),
+            ('hamiltoncamsales@gmail.com', '', 'Hamilton Cams'),
             ('', 'ICON Vehicle Dynamics <orders@iconvehicledynamics.com>', 'Icon Vehicle Dynamics'),
         ]
 
@@ -238,6 +244,42 @@ class NewVendorFirstPassTests(unittest.TestCase):
         self.assertEqual(data['line_items'][0].get('item_number'), 'CS-DBMM-0359')
         self.assertEqual(data['line_items'][1].get('description'), 'Drop Ship')
 
+    def test_gmail_context_keeps_carli_clue_near_bottom_of_long_forward(self):
+        payload = {
+            'mimeType': 'text/plain',
+            'body': {
+                'data': (
+                    ('Forwarded invoice details\n' + ('line without vendor clue\n' * 600) + 'Carli Suspension\n')
+                    .encode('utf-8')
+                    .decode('utf-8')
+                )
+            },
+        }
+
+        # Gmail API bodies are base64url-encoded.
+        import base64
+        payload['body']['data'] = base64.urlsafe_b64encode(
+            payload['body']['data'].encode('utf-8')
+        ).decode('ascii')
+
+        message_text = _extract_message_context_text(payload, '')
+
+        self.assertIn('Carli Suspension', message_text)
+        self.assertEqual(
+            infer_vendor_from_email_metadata(
+                sender_email='noreply@suspension.randysww.com',
+                sender_header='',
+                subject='Fwd: invoice attached',
+                message_text=message_text,
+            ),
+            'Carli Suspension - $10 DS Fee',
+        )
+
+    def test_power_distributing_and_daystar_skip_global_stock_collapse(self):
+        self.assertFalse(_allow_global_ship_to_stock_detection('Power Distributing'))
+        self.assertFalse(_allow_global_ship_to_stock_detection('Daystar'))
+        self.assertTrue(_allow_global_ship_to_stock_detection('Power Stroke Products'))
+
     def test_power_stroke_products_credit_card_and_will_call(self):
         stock_path = os.path.join(TRAINING_DIR, 'PS', 'Invoice_10513_from_PowerStroke_Products.pdf')
         retail_path = os.path.join(TRAINING_DIR, 'PS', 'Invoice_10488_from_PowerStroke_Products.pdf')
@@ -265,7 +307,7 @@ class NewVendorFirstPassTests(unittest.TestCase):
 
         data = parse_invoice(invoice_path)
 
-        self.assertEqual(data.get('vendor'), 'Hamilton Cams - $20 Dropship Fee')
+        self.assertEqual(data.get('vendor'), 'Hamilton Cams')
         self.assertEqual(data.get('vendor_address'), '2881 CR 207, Lampasas, TX 76550')
         self.assertEqual(data.get('terms'), 'Credit Card')
         self.assertEqual(data.get('customer'), 'Trevor Morris')
@@ -337,7 +379,7 @@ class NewVendorFirstPassTests(unittest.TestCase):
         self.assertEqual(data.get('terms'), '1% 10 Net 30')
         self.assertEqual(data.get('customer'), 'Dominic Monego')
         self.assertEqual(len(data.get('line_items') or []), 2)
-        self.assertEqual(data['line_items'][1].get('description'), 'DROP SHIP FEE')
+        self.assertEqual(data['line_items'][1].get('description'), 'Drop Ship')
         self.assertEqual(data['line_items'][1].get('amount'), '20.00')
 
     def test_icon_vehicle_dynamics_extracts_freight(self):

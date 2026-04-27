@@ -22,7 +22,7 @@ SCOPES = [
 ]
 
 PROCESSED_LABEL_NAME = "InvoiceExtractor-Processed"
-MESSAGE_TEXT_MAX_CHARS = 8000
+MESSAGE_TEXT_MAX_CHARS = 100000
 
 
 class WrongAuthorizedAccountError(Exception):

@@ -282,6 +282,14 @@ def _load_vendor_data():
 ) = _load_vendor_data()
 
 
+SHARED_FORWARDER_DOMAINS = (
+    '@suspension.randysww.com',
+)
+SHARED_FORWARDER_EMAILS = {
+    'system@sent-via.netsuite.com',
+}
+
+
 def _find_vendor_by_address_alias(text):
     if not text or not VENDOR_ALIAS_LIST:
         return ""
@@ -410,16 +418,41 @@ def infer_vendor_from_sender(sender_email='', sender_header=''):
     return ''
 
 
+def _is_shared_forwarder_sender(sender_email='', sender_header=''):
+    """Return True for transport-only sender addresses shared by many vendors."""
+    email_value = _extract_sender_email(sender_email or sender_header)
+    header_value = str(sender_header or sender_email or '').strip().lower()
+    if email_value in SHARED_FORWARDER_EMAILS:
+        return True
+    if any(email_value.endswith(domain) for domain in SHARED_FORWARDER_DOMAINS):
+        return True
+    if any(address in header_value for address in SHARED_FORWARDER_EMAILS):
+        return True
+    return any(domain in header_value for domain in SHARED_FORWARDER_DOMAINS)
+
+
 def _find_vendor_by_sender_alias_in_text(text):
-    """Look for whitelisted sender aliases inside forwarded email text."""
+    """Find a vendor when the forwarded body contains a configured vendor email alias."""
     if not text or not VENDOR_SENDER_ALIAS_PAIRS:
         return ''
-    lowered_text = str(text or '').lower()
+
+    text_value = str(text or '').lower()
     for alias, vendor in VENDOR_SENDER_ALIAS_PAIRS:
         alias_value = str(alias or '').strip().lower()
-        if not alias_value or '@' not in alias_value:
+        if not alias_value:
             continue
-        if alias_value in lowered_text:
+        if alias_value.startswith('@'):
+            domain = re.escape(alias_value[1:])
+            if re.search(r'[a-z0-9._%+\-]+@' + domain + r'\b', text_value, re.IGNORECASE):
+                return vendor
+            if re.search(r'(?<![a-z0-9.\-])' + domain + r'\b', text_value, re.IGNORECASE):
+                return vendor
+            continue
+        if '@' in alias_value:
+            if re.search(r'(?<![a-z0-9._%+\-])' + re.escape(alias_value) + r'\b', text_value, re.IGNORECASE):
+                return vendor
+            continue
+        if alias_value in text_value:
             return vendor
     return ''
 
@@ -443,13 +476,7 @@ def _infer_vendor_from_email_content(subject='', message_text=''):
 
 def _infer_vendor_from_shared_sender_content(sender_email='', sender_header='', subject='', message_text=''):
     """Resolve vendors that share a sender mailbox by reading the forwarded email content."""
-    email_value = _extract_sender_email(sender_email or sender_header)
-    if not email_value:
-        return ''
-    if not (
-        email_value.endswith('@suspension.randysww.com')
-        or email_value == 'system@sent-via.netsuite.com'
-    ):
+    if not _is_shared_forwarder_sender(sender_email=sender_email, sender_header=sender_header):
         return ''
     return _infer_vendor_from_email_content(subject=subject, message_text=message_text)
 
@@ -639,6 +666,8 @@ def validate_vendor_name(text):
         return False
     if not re.search(r'[A-Za-z]', text):
         return False
+    if re.match(r'^\s*Printed\s+\d{1,2}/\d{1,2}/\d{2,4}\b', str(text or ''), re.IGNORECASE):
+        return False
     collapsed = re.sub(r'\s+', '', str(text or '')).lower()
     if collapsed in ('reprint', 'invoice', 'page'):
         return False
@@ -655,8 +684,11 @@ def validate_vendor_name(text):
 
 def _is_reprint_vendor_name(name):
     """Return True when a detected vendor is just a reprint stamp/header."""
-    collapsed = re.sub(r'\s+', '', str(name or '')).lower()
-    return collapsed == 'reprint'
+    text = str(name or '').strip()
+    collapsed = re.sub(r'\s+', '', text).lower()
+    return collapsed == 'reprint' or bool(
+        re.match(r'^Printed\s+\d{1,2}/\d{1,2}/\d{2,4}\b', text, re.IGNORECASE)
+    )
 
 
 def _text_matches_pt_layout(text):
@@ -2201,6 +2233,23 @@ def _is_pd_vendor_name(name):
     return False
 
 
+def _is_daystar_vendor_name(name):
+    """Return True if vendor name looks like Daystar."""
+    key = _normalize_vendor_key(name or '')
+    if key and key == 'daystar':
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    return bool(canonical_key and canonical_key == 'daystar')
+
+
+def _allow_global_ship_to_stock_detection(vendor_name):
+    """Return True when generic ship-to stock/will-call detection should run."""
+    if _is_pd_vendor_name(vendor_name) or _is_daystar_vendor_name(vendor_name):
+        return False
+    return True
+
+
 def _is_holley_vendor_name(name):
     """Return True if vendor name looks like Holley Performance Brands."""
     key = _normalize_vendor_key(name or '')
@@ -3004,6 +3053,15 @@ def _extract_icon_cognito_ship_to_lines(filepath):
         filepath,
         header_pattern=r'\bBill\s+To\s+Ship\s+To\b',
         stop_pattern=r'\bTerms\b|\bTracking\b|\bQuantity\b',
+    )
+
+
+def _extract_redhead_ship_to_lines(filepath):
+    """Extract Red Head's right-hand Ship To column without bill-to spillover."""
+    return _extract_side_by_side_ship_to_lines(
+        filepath,
+        header_pattern=r'\bBill\s+To\s+Ship\s+To\b',
+        stop_pattern=r'\bP\.O\.\s+No\.\s+Terms\s+Ship\s+Via\b',
     )
 
 
@@ -6804,6 +6862,22 @@ def _refresh_vendor_dependent_fields(data, text, filepath=None):
     return _apply_vendor_specific_overrides(data, text, filepath)
 
 
+def _refresh_invoice_for_resolved_vendor(data, text, filepath, vendor_name):
+    """Re-run vendor-dependent extraction after metadata resolves the vendor."""
+    resolved_vendor = normalize_vendor_name(vendor_name)
+    if resolved_vendor:
+        data['vendor'] = resolved_vendor
+
+    data['line_items'] = extract_line_items(text, filepath, vendor_name=resolved_vendor)
+    if data.get('line_items'):
+        freight_items = [i for i in data['line_items'] if i.get('is_freight')]
+        if freight_items and not data.get('shipping_description'):
+            desc = freight_items[0].get('description') or freight_items[0].get('item_number') or 'Freight'
+            data['shipping_description'] = desc
+
+    return _apply_vendor_specific_overrides(data, text, filepath)
+
+
 def parse_invoice(
     filepath,
     status_callback=None,
@@ -7074,6 +7148,8 @@ def parse_invoice(
         ship_to_lines = _extract_carli_ship_to_lines(filepath)
     elif _is_icon_vendor_name(data.get('vendor', '')) or _is_cognito_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_icon_cognito_ship_to_lines(filepath)
+    elif _is_redhead_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_redhead_ship_to_lines(filepath)
     elif _is_ats_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_ats_ship_to_lines(filepath)
     elif _is_isspro_vendor_name(data.get('vendor', '')):
@@ -7099,7 +7175,11 @@ def parse_invoice(
         else _ship_to_our_address(text)
     )
 
-    if not data.get('stock_order') and ship_to_is_ours:
+    if (
+        not data.get('stock_order')
+        and ship_to_is_ours
+        and _allow_global_ship_to_stock_detection(data.get('vendor', ''))
+    ):
         will_call_customer = (
             _will_call_customer_from_lines(ship_to_lines)
             if ship_to_lines is not None
