@@ -101,6 +101,45 @@ class SBInvoiceParserTests(unittest.TestCase):
         self.assertEqual(invoice_data['line_items'][0]['unit_price'], '253.93')
         self.assertIn('Cold Air Intake', invoice_data['line_items'][0]['description'])
         self.assertIn('Dry Extendable', invoice_data['line_items'][0]['description'])
+
+    def test_sb_shopify_body_invoice_uses_product_line_before_option_price(self):
+        body = """Order summary
+S&B Intake Replacement Filter x 1
+Cotton Cleanable $46.23
+Subtotal $46.23
+Shipping $0.00
+Taxes $0.00
+Total due May 27, 2026 $46.23 USD
+Customer information
+Shipping address
+Test Customer
+1 Main St
+Billing address
+Diesel Power Products
+Payment
+Net 30: Due May 27, 2026
+Shipping method
+Ground
+"""
+        payload = {
+            'type': 'email_body_invoice',
+            'parser': 'sb_shopify_order',
+            'subject': 'Order #743235 Confirmed',
+            'message_text': body,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'SB_Order_743235.email.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f)
+
+            invoice_data = parse_email_invoice(path)
+
+        self.assertEqual(len(invoice_data['line_items']), 1)
+        item = invoice_data['line_items'][0]
+        self.assertEqual(item['quantity'], '1')
+        self.assertEqual(item['unit_price'], '46.23')
+        self.assertEqual(item['description'], 'S&B Intake Replacement Filter - Cotton Cleanable')
     def test_sb_shipping_cost_handles_nested_parentheses(self):
         cases = {
             'S&B I464016.pdf': '42.00',

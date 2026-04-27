@@ -6973,6 +6973,7 @@ def _extract_sb_body_order_items(text):
         if re.search(r'(?i)\b(Subtotal|Shipping|Taxes?|Total paid|Total due)\b', line):
             continue
         match = re.search(r'(?i)(.*?)\s*[x×]\s*(\d+)\s+\$?([\d,]+\.?\d{2})\b', line)
+        variant = ''
         if match:
             description = match.group(1).strip(' -')
             quantity = match.group(2)
@@ -6984,14 +6985,19 @@ def _extract_sb_body_order_items(text):
             quantity = '1'
             amount = _clean_price(price_match.group(1))
             description = re.sub(r'\$?[\d,]+\.?\d{2}\b', '', line).strip(' -')
+            if idx > 0:
+                prev_match = re.search(r'(?i)^(.+?)\s*[x×]\s*(\d+)\s*$', lines[idx - 1].strip())
+                if prev_match:
+                    description = prev_match.group(1).strip(' -')
+                    quantity = prev_match.group(2)
+                    variant = re.sub(r'\$?[\d,]+\.?\d{2}\b', '', line).strip(' -')
 
         if not description and idx > 0:
             description = lines[idx - 1].strip()
         if not description:
             continue
 
-        variant = ''
-        if idx + 1 < len(lines):
+        if not variant and idx + 1 < len(lines):
             next_line = lines[idx + 1].strip()
             if (
                 next_line
