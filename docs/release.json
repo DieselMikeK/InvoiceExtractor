@@ -1,24 +1,24 @@
 {
-  "version": "1.2.49",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.49/InvoiceExtractor.exe",
-  "sha256": "5b0e3ea764b7bac823681b1fba0a16ce6e769de25aec3b4ae7c7e528034961aa",
-  "notes": "Fix Carli detection in long forwarded emails and prevent Power Distributing/Daystar dropship invoices from being collapsed as stock or will-call orders.",
-  "published_at": "04/27/2026 20:03:49",
+  "version": "1.2.50",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.50/InvoiceExtractor.exe",
+  "sha256": "ab7c134da33cf1fc0799352229f58887ab4e736d18fb2ed2517a7c80cbc7abd5",
+  "notes": "Fix Carli invoices being marked Not an Invoice when tracking lines are misread as vendors; fix Serra invoices where Attn: Josh blocked sender vendor detection; use Daystar's left Ship To column for stock/will-call detection.",
+  "published_at": "04/27/2026 20:28:59",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.49/InvoiceExtractor.exe",
-      "sha256": "5b0e3ea764b7bac823681b1fba0a16ce6e769de25aec3b4ae7c7e528034961aa"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.50/InvoiceExtractor.exe",
+      "sha256": "ab7c134da33cf1fc0799352229f58887ab4e736d18fb2ed2517a7c80cbc7abd5"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.49/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.50/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.49/update-InvoiceExtractorUpdater.exe",
-      "sha256": "662ae61dfd0f4dfdaba907ae564f51b0d9ad34776cee0dc2dc207cef9309b5af"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.50/update-InvoiceExtractorUpdater.exe",
+      "sha256": "f2ec6c9c09d5fb5a3fcf86e0e7f8c87fdd7cf1d7a6049f27a5b07ee4cf72eca6"
     }
   ]
 }
