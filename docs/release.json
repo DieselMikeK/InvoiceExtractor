@@ -1,24 +1,24 @@
 {
-  "version": "1.2.48",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.48/InvoiceExtractor.exe",
-  "sha256": "ca6d4050fb118542d5832b6e456cd65b0314423d38871cdb1a43fd1e2c36ec81",
-  "notes": "Invoice 564994 was pulled in on the master as a stock order but the order is a d",
-  "published_at": "04/24/2026 21:12:42",
+  "version": "1.2.49",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.49/InvoiceExtractor.exe",
+  "sha256": "5b0e3ea764b7bac823681b1fba0a16ce6e769de25aec3b4ae7c7e528034961aa",
+  "notes": "Fix Carli detection in long forwarded emails and prevent Power Distributing/Daystar dropship invoices from being collapsed as stock or will-call orders.",
+  "published_at": "04/27/2026 20:03:49",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.48/InvoiceExtractor.exe",
-      "sha256": "ca6d4050fb118542d5832b6e456cd65b0314423d38871cdb1a43fd1e2c36ec81"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.49/InvoiceExtractor.exe",
+      "sha256": "5b0e3ea764b7bac823681b1fba0a16ce6e769de25aec3b4ae7c7e528034961aa"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.48/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.49/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.48/update-InvoiceExtractorUpdater.exe",
-      "sha256": "9f8723121dfea0f38b3c5912ab741829844bcbff13e7bd87da6254e89027274b"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.49/update-InvoiceExtractorUpdater.exe",
+      "sha256": "662ae61dfd0f4dfdaba907ae564f51b0d9ad34776cee0dc2dc207cef9309b5af"
     }
   ]
 }
