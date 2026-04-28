@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "S\u0026B body invoices now preserve the signed View your order URL, render the Shopify order page in Chrome, read the LineItems GraphQL response for SKU/name/quantity/price, and use the order URL as the Bill No hyperlink.",
-    "requested_at":  "2026-04-28T19:17:22.5621605Z"
+    "notes":  "Reverted the Chrome/Selenium Shopify order-page parser. S\u0026B body invoices now keep email-body parsing and fill missing SKUs during SkuNexus validation by matching PO line items by price, quantity, amount, and description.",
+    "requested_at":  "2026-04-28T21:50:04.7197089Z"
 }
