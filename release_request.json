@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix S\u0026B no-attachment body invoice item parsing for model-year product names and split price lines.",
-    "requested_at":  "2026-04-28T17:43:27.3971878Z"
+    "notes":  "S\u0026B body invoices now preserve the signed View your order URL, render the Shopify order page in Chrome, read the LineItems GraphQL response for SKU/name/quantity/price, and use the order URL as the Bill No hyperlink.",
+    "requested_at":  "2026-04-28T19:17:22.5621605Z"
 }
