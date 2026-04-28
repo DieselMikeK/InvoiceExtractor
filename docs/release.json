@@ -1,24 +1,24 @@
 {
-  "version": "1.2.54",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.54/InvoiceExtractor.exe",
-  "sha256": "eb29f40f09607f7637518fee031f6d29de7ff9041b60b01cb6fc1d150be1a182",
-  "notes": "Fix Carli stock-order detection for invoices shipped to the DPP warehouse.",
-  "published_at": "04/28/2026 16:26:31",
+  "version": "1.2.55",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.55/InvoiceExtractor.exe",
+  "sha256": "841b7de2e1a5d58e50ae4be1805a3f27c40154fbed16e03df1ffd192075f7341",
+  "notes": "Fix S&B no-attachment body invoice item parsing for model-year product names and split price lines.",
+  "published_at": "04/28/2026 17:46:01",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.54/InvoiceExtractor.exe",
-      "sha256": "eb29f40f09607f7637518fee031f6d29de7ff9041b60b01cb6fc1d150be1a182"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.55/InvoiceExtractor.exe",
+      "sha256": "841b7de2e1a5d58e50ae4be1805a3f27c40154fbed16e03df1ffd192075f7341"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.54/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.55/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.54/update-InvoiceExtractorUpdater.exe",
-      "sha256": "c6723467498547ebbe68019d4ff12ccff7ca1028395e22f4ab41ed8a46f5f01e"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.55/update-InvoiceExtractorUpdater.exe",
+      "sha256": "3a79ff0d288917705befda57bb04c243a6cb2a1e5e8ef9e358a45401e0fb13b3"
     }
   ]
 }
