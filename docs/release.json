@@ -1,24 +1,24 @@
 {
-  "version": "1.2.55",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.55/InvoiceExtractor.exe",
-  "sha256": "841b7de2e1a5d58e50ae4be1805a3f27c40154fbed16e03df1ffd192075f7341",
-  "notes": "Fix S&B no-attachment body invoice item parsing for model-year product names and split price lines.",
-  "published_at": "04/28/2026 17:46:01",
+  "version": "1.2.56",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.56/InvoiceExtractor.exe",
+  "sha256": "17c81df0635ec3ebba05bb9161c31d637c53be00c8584a3f882c0e29c0f2b105",
+  "notes": "S&B body invoices now preserve the signed View your order URL, render the Shopify order page in Chrome, read the LineItems GraphQL response for SKU/name/quantity/price, and use the order URL as the Bill No hyperlink.",
+  "published_at": "04/28/2026 19:19:53",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.55/InvoiceExtractor.exe",
-      "sha256": "841b7de2e1a5d58e50ae4be1805a3f27c40154fbed16e03df1ffd192075f7341"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.56/InvoiceExtractor.exe",
+      "sha256": "17c81df0635ec3ebba05bb9161c31d637c53be00c8584a3f882c0e29c0f2b105"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.55/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.56/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.55/update-InvoiceExtractorUpdater.exe",
-      "sha256": "3a79ff0d288917705befda57bb04c243a6cb2a1e5e8ef9e358a45401e0fb13b3"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.56/update-InvoiceExtractorUpdater.exe",
+      "sha256": "7b57c95a89752fbb00a29b7a4e26aae1f110b08d7d8fa055cdb440b2aa300489"
     }
   ]
 }
