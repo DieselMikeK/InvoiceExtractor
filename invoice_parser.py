@@ -2914,7 +2914,15 @@ def _customer_name_from_ship_to_lines(lines):
         line = str(raw_line or '').strip()
         if not line:
             continue
-        if line.lower() in ('us', 'usa', 'united states', 'ship to', 'bill to', 'remit to'):
+        if line.lower() in (
+            'us',
+            'usa',
+            'united states',
+            'united states of america',
+            'ship to',
+            'bill to',
+            'remit to',
+        ):
             continue
         if _OUR_COMPANY_NAMES.search(line):
             continue
@@ -3061,7 +3069,7 @@ def _extract_carli_ship_to_lines(filepath):
     """Extract Carli Suspension ship-to lines."""
     return _extract_side_by_side_ship_to_lines(
         filepath,
-        header_pattern=r'\bBill\s+To\s+Ship\s+To\b',
+        header_pattern=r'\bBill\s+To\s*:?\s+Ship\s+To\s*:?\b',
         stop_pattern=r'\bItem\s+Number\b',
     )
 

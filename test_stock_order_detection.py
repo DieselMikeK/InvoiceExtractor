@@ -2,6 +2,7 @@ import unittest
 from unittest import mock
 
 from invoice_parser import (
+    _extract_carli_ship_to_lines,
     _extract_label_value_pairs,
     _extract_redhead_ship_to_lines,
     _matches_internal_stock_customer_hint,
@@ -24,6 +25,58 @@ def _word(text, x0, top):
 
 
 class StockOrderDetectionTests(unittest.TestCase):
+    def test_carli_ship_to_accepts_colon_header_and_detects_stock_pdf(self):
+        path = (
+            'training\\CRL\\'
+            'INVOICE 122780 04_27_26 16_27_06 569.PDF'
+        )
+        lines = _extract_carli_ship_to_lines(path)
+
+        self.assertEqual(
+            lines,
+            [
+                'POWER PRODUCTS UNLIMITED, INC',
+                '6200 E. Main Ave.',
+                'Building 1 Suite A',
+                'SPOKANE VALLEY WA99212',
+                'UNITED STATES OF AMERICA',
+            ],
+        )
+        self.assertTrue(_ship_to_our_address_from_lines(lines))
+
+    def test_carli_stock_pdf_collapses_to_stock_order(self):
+        data = parse_invoice(
+            'training\\CRL\\'
+            'INVOICE 122780 04_27_26 16_27_06 569.PDF'
+        )
+
+        self.assertEqual(data.get('vendor'), 'Carli Suspension - $10 DS Fee')
+        self.assertEqual(data.get('invoice_number'), '122780')
+        self.assertEqual(data.get('po_number'), '0060623')
+        self.assertTrue(data.get('stock_order'))
+        self.assertEqual(data.get('stock_order_description'), 'STOCK ORDER')
+        self.assertEqual(data.get('customer'), 'Diesel Power Products')
+
+    def test_carli_regular_drop_ship_pdfs_do_not_become_stock_orders(self):
+        for path, customer in [
+            (
+                'training\\CRL\\INVOICE 120871 03_05_26 14_22_22 516.PDF',
+                'Dominic Monego',
+            ),
+            (
+                'training\\CRL\\INVOICE 120872 03_05_26 14_24_14 5.PDF',
+                'Cade Grant',
+            ),
+        ]:
+            with self.subTest(path=path):
+                lines = _extract_carli_ship_to_lines(path)
+                data = parse_invoice(path)
+
+                self.assertIn(customer, lines)
+                self.assertFalse(_ship_to_our_address_from_lines(lines))
+                self.assertFalse(data.get('stock_order'))
+                self.assertEqual(data.get('customer'), customer)
+
     def test_matches_company_name(self):
         self.assertTrue(_matches_internal_stock_customer_hint('Diesel Power Products'))
 
