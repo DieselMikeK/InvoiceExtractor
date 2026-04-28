@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix S\u0026B body invoice item descriptions when Shopify puts the product name above the option and price line.",
-    "requested_at":  "2026-04-27T22:56:33.7210704Z"
+    "notes":  "Fix Carli stock-order detection for invoices shipped to the DPP warehouse.",
+    "requested_at":  "2026-04-28T16:24:20.5086472Z"
 }
