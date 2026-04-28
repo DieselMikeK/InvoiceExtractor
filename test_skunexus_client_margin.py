@@ -130,6 +130,110 @@ class PoMarginTests(unittest.TestCase):
         self.assertEqual(sku, '83-1001')
         self.assertEqual(line_id, 'line-2')
 
+    def test_infers_missing_sb_sku_when_price_differs(self):
+        po_details = {
+            'vendor': {'name': 'S&B Filters'},
+            'lineItems': {
+                'rows': [
+                    {
+                        'id': 'line-1',
+                        'product': {
+                            'sku': 'SB-75-5101D',
+                            'name': 'S&B 75-5101 Cold Air Intake 01-04 6.6L LB7 Duramax Dry, Disposable Filter',
+                        },
+                        'quantity': 1,
+                        'price': '252.67',
+                        'total_price': '252.67',
+                    }
+                ]
+            },
+        }
+        row = {
+            'description': 'Cold Air Intake for 2001-2004 Chevy / GMC Duramax LB7 6.6L x 1 - Dry Extendable',
+            'qty': '',
+            'rate': '253.93',
+            'amount': '',
+        }
+
+        sku, line_id = infer_invoice_row_sku_from_po(po_details, row)
+
+        self.assertEqual(sku, '75-5101D')
+        self.assertEqual(line_id, 'line-1')
+
+    def test_infers_missing_sb_sku_from_description_in_multi_line_po_with_price_mismatch(self):
+        po_details = {
+            'vendor': {'name': 'S&B Filters'},
+            'lineItems': {
+                'rows': [
+                    {
+                        'id': 'line-1',
+                        'product': {
+                            'sku': 'SB-83-2004',
+                            'name': 'Hot Side Intercooler Pipe for 2016-2026 Ford Powerstroke 6.7L',
+                        },
+                        'quantity': 1,
+                        'price': '166.83',
+                        'total_price': '166.83',
+                    },
+                    {
+                        'id': 'line-2',
+                        'product': {
+                            'sku': 'SB-75-5101D',
+                            'name': 'S&B 75-5101 Cold Air Intake 01-04 6.6L LB7 Duramax Dry, Disposable Filter',
+                        },
+                        'quantity': 2,
+                        'price': '252.67',
+                        'total_price': '505.34',
+                    },
+                ]
+            },
+        }
+        row = {
+            'description': 'Cold Air Intake for 2001-2004 Chevy / GMC Duramax LB7 6.6L x 1 - Dry Extendable',
+            'qty': '1',
+            'rate': '253.93',
+            'amount': '',
+        }
+
+        sku, line_id = infer_invoice_row_sku_from_po(po_details, row)
+
+        self.assertEqual(sku, '75-5101D')
+        self.assertEqual(line_id, 'line-2')
+
+    def test_does_not_infer_missing_sb_sku_from_unrelated_description(self):
+        po_details = {
+            'vendor': {'name': 'S&B Filters'},
+            'lineItems': {
+                'rows': [
+                    {
+                        'id': 'line-1',
+                        'product': {'sku': 'SB-83-2004', 'name': 'Hot Side Intercooler Pipe'},
+                        'quantity': 1,
+                        'price': '166.83',
+                        'total_price': '166.83',
+                    },
+                    {
+                        'id': 'line-2',
+                        'product': {'sku': 'SB-83-1001', 'name': 'Cold Side Intercooler Pipe'},
+                        'quantity': 1,
+                        'price': '200.33',
+                        'total_price': '200.33',
+                    },
+                ]
+            },
+        }
+        row = {
+            'description': 'Intake Replacement Filter Cotton Cleanable',
+            'qty': '',
+            'rate': '',
+            'amount': '',
+        }
+
+        sku, line_id = infer_invoice_row_sku_from_po(po_details, row)
+
+        self.assertEqual(sku, '')
+        self.assertEqual(line_id, '')
+
     def test_infers_missing_sb_sku_respects_used_line_items(self):
         po_details = {
             'lineItems': {

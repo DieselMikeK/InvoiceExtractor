@@ -536,6 +536,34 @@ def _normalize_description(value):
     return re.sub(r'\s+', ' ', text).strip()
 
 
+def _description_tokens(value):
+    text = _normalize_description(value)
+    if not text:
+        return set()
+
+    stop_words = {
+        'a',
+        'an',
+        'and',
+        'for',
+        'of',
+        'or',
+        's',
+        'sb',
+        'the',
+        'with',
+        'x',
+    }
+    tokens = set()
+    for token in text.split():
+        if token in stop_words:
+            continue
+        tokens.add(token)
+        if len(token) == 4 and token.isdigit() and token.startswith(('19', '20')):
+            tokens.add(token[2:])
+    return tokens
+
+
 def _is_non_sku_product_service(value):
     key = _normalize_product_service(value)
     if not key:
@@ -581,14 +609,47 @@ def _description_similarity(left, right):
     right_norm = _normalize_description(right)
     if not left_norm or not right_norm:
         return 0.0
-    return SequenceMatcher(None, left_norm, right_norm).ratio()
+
+    sequence_score = SequenceMatcher(None, left_norm, right_norm).ratio()
+    left_tokens = _description_tokens(left)
+    right_tokens = _description_tokens(right)
+    if not left_tokens or not right_tokens:
+        return sequence_score
+
+    overlap = left_tokens & right_tokens
+    dice_score = (2 * len(overlap)) / (len(left_tokens) + len(right_tokens))
+    invoice_coverage = len(overlap) / len(left_tokens)
+    token_score = max(dice_score, invoice_coverage)
+    score = max(sequence_score, token_score)
+
+    left_has_hot = 'hot' in left_tokens
+    left_has_cold = 'cold' in left_tokens
+    right_has_hot = 'hot' in right_tokens
+    right_has_cold = 'cold' in right_tokens
+    if (left_has_hot and right_has_cold and not right_has_hot) or (
+        left_has_cold and right_has_hot and not right_has_cold
+    ):
+        score -= 0.20
+
+    return max(0.0, min(1.0, score))
+
+
+def _prices_close(left, right):
+    if left is None or right is None:
+        return False
+    if abs(left - right) <= 0.02:
+        return True
+    largest = max(abs(left), abs(right), 1.0)
+    return (abs(left - right) / largest) <= 0.01
 
 
 def match_invoice_row_to_po_line(skunexus_data, invoice_row, used_line_item_ids=None):
     """Find the best SkuNexus PO line for an invoice row without relying on SKU.
 
     This is used for S&B body invoices where the email has item name/price but no
-    SKU. Price is weighted heavily; description is used as a tie-breaker.
+    SKU. Product description/name is the primary signal; price and quantity only
+    help rank otherwise similar candidates because either can legitimately differ
+    from the vendor invoice.
     """
     if not skunexus_data or not invoice_row:
         return None
@@ -611,20 +672,19 @@ def match_invoice_row_to_po_line(skunexus_data, invoice_row, used_line_item_ids=
         if not sn_sku:
             continue
 
-        score = 0.0
+        similarity = _description_similarity(invoice_description, sn_description)
+        score = similarity * 100
         reasons = []
         sn_price = _to_float(item.get('price'))
         sn_qty = _to_float(item.get('quantity'))
         sn_total = _to_float(item.get('total_price'))
 
-        if invoice_price is not None and sn_price is not None and abs(invoice_price - sn_price) <= 0.02:
-            score += 60
+        if invoice_price is not None and sn_price is not None and _prices_close(invoice_price, sn_price):
+            score += 8
             reasons.append('price')
-        elif invoice_price is not None and sn_price is not None:
-            score -= min(abs(invoice_price - sn_price), 25)
 
         if invoice_qty is not None and sn_qty is not None and abs(invoice_qty - sn_qty) <= 0.01:
-            score += 20
+            score += 3
             reasons.append('qty')
 
         if (
@@ -635,11 +695,9 @@ def match_invoice_row_to_po_line(skunexus_data, invoice_row, used_line_item_ids=
             and sn_total is not None
             and abs(invoice_amount - sn_total) <= 0.05
         ):
-            score += 20
+            score += 4
             reasons.append('amount')
 
-        similarity = _description_similarity(invoice_description, sn_description)
-        score += similarity * 30
         if similarity >= 0.55:
             reasons.append('description')
 
@@ -650,15 +708,15 @@ def match_invoice_row_to_po_line(skunexus_data, invoice_row, used_line_item_ids=
 
     candidates.sort(key=lambda value: (value[0], value[1]), reverse=True)
     best_score, best_similarity, best_item, best_reasons = candidates[0]
-    second_score = candidates[1][0] if len(candidates) > 1 else None
+    second_score = candidates[1][0] if len(candidates) > 1 else -1.0
+    second_similarity = candidates[1][1] if len(candidates) > 1 else -1.0
 
-    # Require a strong signal. A unique price/qty match passes even with weak
-    # wording; otherwise the description must help disambiguate.
-    if best_score < 75:
+    # SKU inference is intentionally description-led. Validation still runs
+    # afterward and can fail price or quantity, but those failures should not
+    # prevent the SKU from carrying into the sheet.
+    if best_similarity < 0.50:
         return None
-    if second_score is not None and (best_score - second_score) < 8:
-        return None
-    if 'price' not in best_reasons and best_similarity < 0.70:
+    if len(candidates) > 1 and (best_score - second_score) < 6 and (best_similarity - second_similarity) < 0.08:
         return None
     return best_item
 
