@@ -1,24 +1,24 @@
 {
-  "version": "1.2.53",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.53/InvoiceExtractor.exe",
-  "sha256": "ace4e81441e926d4a28a1f6ab21628e291861bb8532771eb18a977245358e02a",
-  "notes": "Fix S&B body invoice item descriptions when Shopify puts the product name above the option and price line.",
-  "published_at": "04/27/2026 22:58:17",
+  "version": "1.2.54",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.54/InvoiceExtractor.exe",
+  "sha256": "eb29f40f09607f7637518fee031f6d29de7ff9041b60b01cb6fc1d150be1a182",
+  "notes": "Fix Carli stock-order detection for invoices shipped to the DPP warehouse.",
+  "published_at": "04/28/2026 16:26:31",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.53/InvoiceExtractor.exe",
-      "sha256": "ace4e81441e926d4a28a1f6ab21628e291861bb8532771eb18a977245358e02a"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.54/InvoiceExtractor.exe",
+      "sha256": "eb29f40f09607f7637518fee031f6d29de7ff9041b60b01cb6fc1d150be1a182"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.53/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.54/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.53/update-InvoiceExtractorUpdater.exe",
-      "sha256": "970f29cb3eebf0865169613c449abc82ea460477073cf2070893977fa2cced57"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.54/update-InvoiceExtractorUpdater.exe",
+      "sha256": "c6723467498547ebbe68019d4ff12ccff7ca1028395e22f4ab41ed8a46f5f01e"
     }
   ]
 }
