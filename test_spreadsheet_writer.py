@@ -2,14 +2,12 @@ import os
 import tempfile
 import unittest
 
-from openpyxl import load_workbook
-
 from invoice_parser import parse_invoice
-from spreadsheet_writer import read_spreadsheet_rows, write_invoice_to_spreadsheet
+from spreadsheet_writer import read_spreadsheet_rows, write_invoice_to_spreadsheet, write_sku_updates
 
 
 class SpreadsheetWriterTests(unittest.TestCase):
-    def test_bill_no_hyperlink_prefers_source_url(self):
+    def test_write_sku_updates_fills_existing_row(self):
         invoice_data = {
             'invoice_number': '743636',
             'vendor': 'S&B Filters',
@@ -20,12 +18,10 @@ class SpreadsheetWriterTests(unittest.TestCase):
             'po_number': '0064810',
             'customer': 'Bill Seeberger',
             'total': '386.66',
-            'shipping_cost': '19.50',
-            'source_path': 'Invoices/invoices_4-28/SB_Order_743636.email.json',
-            'source_url': 'https://shopify.com/69841617189/account/orders/token?locale=en-US',
+            'shipping_cost': '',
             'line_items': [
                 {
-                    'item_number': '83-2004',
+                    'item_number': '',
                     'description': 'Hot Side Intercooler Pipe',
                     'quantity': '1',
                     'unit_price': '166.83',
@@ -35,13 +31,12 @@ class SpreadsheetWriterTests(unittest.TestCase):
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = os.path.join(tmpdir, 'source_url_test.xlsx')
+            output_path = os.path.join(tmpdir, 'sku_update.xlsx')
             write_invoice_to_spreadsheet(output_path, invoice_data)
-            wb = load_workbook(output_path)
-            link = wb.active.cell(row=2, column=1).hyperlink
+            write_sku_updates(output_path, {2: '83-2004'})
+            rows = read_spreadsheet_rows(output_path)
 
-        self.assertIsNotNone(link)
-        self.assertEqual(link.target, invoice_data['source_url'])
+        self.assertEqual(rows[0]['sku'], '83-2004')
 
     def test_dpp_discount_exports_blank_sku_only(self):
         invoice_data = {

@@ -1,21 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
-import selenium
-
-
-selenium_manager = os.path.join(
-    os.path.dirname(selenium.__file__),
-    'webdriver',
-    'common',
-    'windows',
-    'selenium-manager.exe',
-)
-selenium_binaries = []
-if os.path.exists(selenium_manager):
-    selenium_binaries.append(
-        (selenium_manager, os.path.join('selenium', 'webdriver', 'common', 'windows'))
-    )
 
 
 updater_asset = os.path.join('dist', 'InvoiceExtractorUpdater.exe')
@@ -30,7 +15,7 @@ if not os.path.exists(updater_asset):
 a = Analysis(
     ['invoice_extractor_gui.py'],
     pathex=[os.path.abspath('.')],
-    binaries=selenium_binaries,
+    binaries=[],
     datas=[
         ('header.png', '.'),
         ('logo.ico', '.'),

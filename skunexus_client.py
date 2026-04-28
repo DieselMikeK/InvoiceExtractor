@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """SkuNexus API client for PO validation."""
+from difflib import SequenceMatcher
 import re
 import requests
 
@@ -529,6 +530,12 @@ def _normalize_product_service(value):
     return s
 
 
+def _normalize_description(value):
+    text = str(value or '').lower()
+    text = re.sub(r'[^a-z0-9]+', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
 def _is_non_sku_product_service(value):
     key = _normalize_product_service(value)
     if not key:
@@ -567,6 +574,102 @@ def _normalize_sku(sku, vendor_name=''):
         s = re.sub(r'^[a-z]+', '', s)
 
     return s
+
+
+def _description_similarity(left, right):
+    left_norm = _normalize_description(left)
+    right_norm = _normalize_description(right)
+    if not left_norm or not right_norm:
+        return 0.0
+    return SequenceMatcher(None, left_norm, right_norm).ratio()
+
+
+def match_invoice_row_to_po_line(skunexus_data, invoice_row, used_line_item_ids=None):
+    """Find the best SkuNexus PO line for an invoice row without relying on SKU.
+
+    This is used for S&B body invoices where the email has item name/price but no
+    SKU. Price is weighted heavily; description is used as a tie-breaker.
+    """
+    if not skunexus_data or not invoice_row:
+        return None
+
+    used_line_item_ids = set(used_line_item_ids or [])
+    invoice_qty = _to_float(invoice_row.get('qty'))
+    invoice_price = _to_float(invoice_row.get('rate'))
+    invoice_amount = _to_float(invoice_row.get('amount'))
+    invoice_description = str(invoice_row.get('description') or '').strip()
+
+    candidates = []
+    for item in skunexus_data.get('lineItems', {}).get('rows', []) or []:
+        item_id = str(item.get('id') or '').strip()
+        if item_id and item_id in used_line_item_ids:
+            continue
+
+        product = item.get('product') or {}
+        sn_sku = str(product.get('sku') or '').strip()
+        sn_description = str(product.get('name') or '').strip()
+        if not sn_sku:
+            continue
+
+        score = 0.0
+        reasons = []
+        sn_price = _to_float(item.get('price'))
+        sn_qty = _to_float(item.get('quantity'))
+        sn_total = _to_float(item.get('total_price'))
+
+        if invoice_price is not None and sn_price is not None and abs(invoice_price - sn_price) <= 0.02:
+            score += 60
+            reasons.append('price')
+        elif invoice_price is not None and sn_price is not None:
+            score -= min(abs(invoice_price - sn_price), 25)
+
+        if invoice_qty is not None and sn_qty is not None and abs(invoice_qty - sn_qty) <= 0.01:
+            score += 20
+            reasons.append('qty')
+
+        if (
+            invoice_amount is not None
+            and invoice_qty is not None
+            and invoice_price is not None
+            and abs(invoice_amount - (invoice_qty * invoice_price)) <= 0.05
+            and sn_total is not None
+            and abs(invoice_amount - sn_total) <= 0.05
+        ):
+            score += 20
+            reasons.append('amount')
+
+        similarity = _description_similarity(invoice_description, sn_description)
+        score += similarity * 30
+        if similarity >= 0.55:
+            reasons.append('description')
+
+        candidates.append((score, similarity, item, reasons))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda value: (value[0], value[1]), reverse=True)
+    best_score, best_similarity, best_item, best_reasons = candidates[0]
+    second_score = candidates[1][0] if len(candidates) > 1 else None
+
+    # Require a strong signal. A unique price/qty match passes even with weak
+    # wording; otherwise the description must help disambiguate.
+    if best_score < 75:
+        return None
+    if second_score is not None and (best_score - second_score) < 8:
+        return None
+    if 'price' not in best_reasons and best_similarity < 0.70:
+        return None
+    return best_item
+
+
+def infer_invoice_row_sku_from_po(skunexus_data, invoice_row, used_line_item_ids=None):
+    """Infer an invoice row SKU from SkuNexus PO line details."""
+    item = match_invoice_row_to_po_line(skunexus_data, invoice_row, used_line_item_ids)
+    if not item:
+        return '', ''
+    product = item.get('product') or {}
+    return str(product.get('sku') or '').strip(), str(item.get('id') or '').strip()
 
 
 def validate_po_row(skunexus_data, invoice_row, vendor_aliases=None):

@@ -10,7 +10,6 @@ import time
 from html import unescape
 from email.utils import parseaddr
 from datetime import datetime
-from urllib.parse import parse_qs, unquote, urlparse
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -96,21 +95,6 @@ def _html_to_text(value):
     text = str(value or '')
     if not text:
         return ''
-
-    def anchor_replacement(match):
-        href = next((group for group in match.groups()[:3] if group), '')
-        label = re.sub(r'(?s)<[^>]+>', ' ', match.group(4) or '')
-        label = unescape(re.sub(r'\s+', ' ', label)).strip()
-        href = unescape(href).strip()
-        if not href:
-            return label
-        return f"{label} {href}" if label else href
-
-    text = re.sub(
-        r'''(?is)<a\b[^>]*\bhref\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>(.*?)</a>''',
-        anchor_replacement,
-        text,
-    )
     text = re.sub(r'(?i)<br\s*/?>', '\n', text)
     text = re.sub(r'(?i)</(?:p|div|li|tr|table|section|h[1-6])>', '\n', text)
     text = re.sub(r'(?s)<[^>]+>', ' ', text)
@@ -253,43 +237,6 @@ def _extract_sb_body_order_number(message_text, subject=''):
     text = f"{subject or ''}\n{message_text or ''}"
     match = re.search(r'(?i)\bOrder\s*#\s*(\d+)', text)
     return match.group(1).strip() if match else ''
-
-
-def _extract_sb_body_order_url(message_text):
-    text = str(message_text or '')
-
-    def clean_url(value):
-        url = unescape(str(value or '')).strip().strip('\'"<>).,')
-        if not url:
-            return ''
-        parsed = urlparse(url)
-        if parsed.netloc.lower().endswith('google.com') and parsed.path == '/url':
-            query_url = parse_qs(parsed.query).get('q')
-            if query_url:
-                url = query_url[0]
-        return unquote(url).strip().strip('\'"<>).,')
-
-    view_match = re.search(
-        r'(?is)\bView\s+your\s+order\b\s*<?(https?://[^>\s]+)',
-        text,
-    )
-    if view_match:
-        return clean_url(view_match.group(1))
-
-    signed_match = re.search(
-        r'https://(?:www\.)?(?:sbfilters\.com|shopify\.com)/[^\s<>]+/orders/[A-Za-z0-9]+/[^\s<>]*authenticate\?[^>\s]+',
-        text,
-        re.IGNORECASE,
-    )
-    if signed_match:
-        return clean_url(signed_match.group(0))
-
-    order_url_match = re.search(
-        r'https://shopify\.com/\d+/account/orders/[A-Za-z0-9]+(?:/[A-Za-z0-9_/-]+)?(?:\?[^>\s]+)?',
-        text,
-        re.IGNORECASE,
-    )
-    return clean_url(order_url_match.group(0)) if order_url_match else ''
 
 
 def _safe_source_filename(value):
@@ -598,7 +545,6 @@ class GmailClient:
             'sender_email': sender_email,
             'sender_header': sender_header,
             'subject': subject,
-            'order_url': _extract_sb_body_order_url(message_text),
             'message_text': message_text,
         }
         with open(filepath, 'w', encoding='utf-8') as f:

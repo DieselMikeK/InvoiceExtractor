@@ -46,9 +46,10 @@ from invoice_parser import parse_email_invoice, parse_invoice, OCR_AVAILABLE
 from spreadsheet_writer import (
     COLUMNS, write_invoice_to_spreadsheet, write_not_invoice_row,
     read_spreadsheet_rows,
+    write_sku_updates,
     write_validation_result, write_validation_results, get_unique_po_numbers
 )
-from skunexus_client import SkuNexusClient, validate_po_row
+from skunexus_client import SkuNexusClient, infer_invoice_row_sku_from_po, validate_po_row
 from shopify_client import ShopifyClient
 from update_utils import (
     MAIN_EXECUTABLE_NAME,
@@ -329,6 +330,11 @@ def _to_float_value(value):
 def _is_diamond_eye_vendor_name(name):
     key = _normalize_vendor_key(name)
     return bool(key and 'diamondeyemanufacturing' in key)
+
+
+def _is_sb_vendor_name(name):
+    key = _normalize_vendor_key(name)
+    return key in {'sandb', 'sandbfilters'} or 'sbfilters' in key
 
 
 def _is_diamond_eye_zero_shipping_batch_row(row):
@@ -3138,12 +3144,14 @@ class InvoiceExtractorGUI:
                     if vendor:
                         group['vendors'].append(vendor)
                     sku = _get_row_sku(row)
-                    if sku:
+                    if _looks_like_sku(sku):
                         group['skus'].append(sku)
 
                 updates = {}
                 margin_updates = {}
+                sku_updates = {}
                 first_margin_row_by_group = {}
+                used_line_items_by_memo = {}
                 for row in rows:
                     if not self.is_running:
                         self.finish_validation("Stopped by user.")
@@ -3175,7 +3183,13 @@ class InvoiceExtractorGUI:
                         continue
 
                     sku_value = _get_row_sku(row)
-                    if not _looks_like_sku(sku_value):
+                    row_vendor = str(row.get('vendor', '')).strip()
+                    group_vendor = _pick_vendor((po_groups.get(memo, {}) or {}).get('vendors', []))
+                    can_infer_missing_sku = (
+                        not _looks_like_sku(sku_value)
+                        and (_is_sb_vendor_name(row_vendor) or _is_sb_vendor_name(group_vendor))
+                    )
+                    if not _looks_like_sku(sku_value) and not can_infer_missing_sku:
                         skipped_count += 1
                         continue
 
@@ -3247,6 +3261,29 @@ class InvoiceExtractorGUI:
                         not_found_count += 1
                         continue
 
+                    if not _looks_like_sku(sku_value):
+                        if can_infer_missing_sku:
+                            used_line_item_ids = used_line_items_by_memo.setdefault(memo, set())
+                            inferred_sku, matched_line_id = infer_invoice_row_sku_from_po(
+                                sn_data,
+                                row,
+                                used_line_item_ids,
+                            )
+                            if inferred_sku:
+                                row['sku'] = inferred_sku
+                                sku_value = inferred_sku
+                                sku_updates[row_num] = inferred_sku
+                                if matched_line_id:
+                                    used_line_item_ids.add(matched_line_id)
+                                self.log(
+                                    f"  Row {row_num}: filled missing S&B SKU from PO {memo}: {inferred_sku}",
+                                    "success"
+                                )
+
+                    if not _looks_like_sku(sku_value):
+                        skipped_count += 1
+                        continue
+
                     # Validate this row against SkuNexus data
                     is_valid, failed_fields = validate_po_row(sn_data, row, vendor_aliases)
                     updates[row_num] = (is_valid, failed_fields)
@@ -3270,8 +3307,10 @@ class InvoiceExtractorGUI:
                     shopify_missing_count += shopify_stats.get('missing', 0)
                     shopify_mismatch_count += shopify_stats.get('mismatch', 0)
 
-                if updates or margin_updates or shopify_core_updates:
+                if updates or margin_updates or shopify_core_updates or sku_updates:
                     try:
+                        if sku_updates:
+                            write_sku_updates(filepath, sku_updates)
                         write_validation_results(
                             filepath,
                             updates,
@@ -3281,6 +3320,7 @@ class InvoiceExtractorGUI:
                         self.log(
                             f"Updated {len(updates)} validation row(s) and "
                             f"{len(margin_updates)} margin row(s) and "
+                            f"{len(sku_updates)} SKU row(s) and "
                             f"{len(shopify_core_updates)} Shopify CORE row(s) in {basename}",
                             "success"
                         )

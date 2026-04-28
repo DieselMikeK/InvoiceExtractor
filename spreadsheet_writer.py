@@ -480,7 +480,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             '_row_fill': PPE_STOCK_ORDER_FILL,
         }
         first_row_num = _write_row(row_data)
-        source_path = invoice_data.get('source_url') or invoice_data.get('source_path') or ''
+        source_path = invoice_data.get('source_path') or ''
         if (not is_csv) and first_row_num and bill_no and source_path:
             try:
                 link_cell = ws.cell(row=first_row_num, column=1)
@@ -649,7 +649,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         row_data['_sb_delivery_fee'] = True
 
     first_row_num = _write_row(row_data)
-    source_path = invoice_data.get('source_url') or invoice_data.get('source_path') or ''
+    source_path = invoice_data.get('source_path') or ''
     if (not is_csv) and first_row_num and bill_no and source_path:
         try:
             link_cell = ws.cell(row=first_row_num, column=1)
@@ -1111,6 +1111,49 @@ def write_validation_results(filepath, updates, margin_updates=None, shopify_cor
         _write_validation_results_csv(filepath, updates, margin_updates, shopify_core_updates)
     else:
         _write_validation_results_xlsx(filepath, updates, margin_updates, shopify_core_updates)
+
+
+def write_sku_updates(filepath, sku_updates):
+    """Write inferred SKU values back to output rows."""
+    if not sku_updates or not os.path.exists(filepath):
+        return
+
+    if _is_csv(filepath):
+        with open(filepath, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            headers = list(reader.fieldnames or [])
+            rows = list(reader)
+
+        if not headers:
+            headers = [header for _, header in COLUMNS]
+        if 'SKU' not in headers:
+            headers.append('SKU')
+
+        for row_num, sku in sku_updates.items():
+            idx = row_num - 2
+            if idx < 0 or idx >= len(rows):
+                continue
+            rows[idx]['SKU'] = str(sku or '').strip()
+
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({h: row.get(h, '') for h in headers})
+        return
+
+    wb = load_workbook(filepath)
+    ws = wb.active
+    sku_col = _resolve_col_by_key(ws, 'sku', create_if_missing=True)
+    for row_num, sku in sku_updates.items():
+        ws.cell(row=row_num, column=sku_col).value = str(sku or '').strip()
+    try:
+        wb.save(filepath)
+    except PermissionError as e:
+        raise PermissionError(
+            f"{filepath} is locked (likely open in Excel). "
+            "Close the file and run validation again."
+        ) from e
 
 
 def write_validation_result(filepath, row_num, is_valid, failed_fields, margin_value=None):
