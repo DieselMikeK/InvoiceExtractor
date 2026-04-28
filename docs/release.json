@@ -1,24 +1,24 @@
 {
-  "version": "1.2.57",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.57/InvoiceExtractor.exe",
-  "sha256": "7eb41fd8e3456722ed2afe49c60db90507316c372829f9e92a1ca16f8f58801b",
-  "notes": "Reverted the Chrome/Selenium Shopify order-page parser. S&B body invoices now keep email-body parsing and fill missing SKUs during SkuNexus validation by matching PO line items by price, quantity, amount, and description.",
-  "published_at": "04/28/2026 21:51:51",
+  "version": "1.2.58",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.58/InvoiceExtractor.exe",
+  "sha256": "bed811ece1d41cfb1d0f8886ab6e18e15b8a82690ac4e38c9a859a2fcff4b2de",
+  "notes": "S&B body invoice improvements: preserve View your order links for Bill No hyperlinks, fix wrapped multi-item descriptions, keep boot-kit descriptions intact, and normalize inferred S&B SKUs by removing the SB- prefix.",
+  "published_at": "04/28/2026 22:40:57",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.57/InvoiceExtractor.exe",
-      "sha256": "7eb41fd8e3456722ed2afe49c60db90507316c372829f9e92a1ca16f8f58801b"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.58/InvoiceExtractor.exe",
+      "sha256": "bed811ece1d41cfb1d0f8886ab6e18e15b8a82690ac4e38c9a859a2fcff4b2de"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.57/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.58/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.57/update-InvoiceExtractorUpdater.exe",
-      "sha256": "867eb6d4c86627e763071cd843357b54fcd9f106e34f83ad1e75070a5ff764b1"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.58/update-InvoiceExtractorUpdater.exe",
+      "sha256": "7fa12b74cbb6d4f9d9f882ba5df4598df316a2322d7b20b0af886e21bee75a3c"
     }
   ]
 }
