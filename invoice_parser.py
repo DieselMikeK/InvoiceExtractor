@@ -9,8 +9,10 @@ import sys
 import re
 import csv
 import json
+from html import unescape
 from email.utils import parseaddr
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs, unquote, urlparse
 import pdfplumber
 
 # Try to import OCR dependencies (optional)
@@ -6974,6 +6976,42 @@ def _extract_block_between_labels(text, start_label, end_labels):
     return result
 
 
+def _extract_sb_body_order_url(text):
+    """Return the Shopify/S&B order URL from a body-invoice email."""
+    body = str(text or '')
+
+    def clean_url(value):
+        url = unescape(str(value or '')).strip().strip('\'"<>).,')
+        if not url:
+            return ''
+        parsed = urlparse(url)
+        if parsed.netloc.lower().endswith('google.com') and parsed.path == '/url':
+            query_url = parse_qs(parsed.query).get('q')
+            if query_url:
+                url = query_url[0]
+        return unquote(url).strip().strip('\'"<>).,')
+
+    view_match = re.search(
+        r'(?is)\bView\s+your\s+order\b\s*<?(https?://[^>\s]+)',
+        body,
+    )
+    if view_match:
+        return clean_url(view_match.group(1))
+    signed_match = re.search(
+        r'https://(?:www\.)?(?:sbfilters\.com|shopify\.com)/[^\s<>]+/orders/[A-Za-z0-9]+/[^\s<>]*authenticate\?[^>\s]+',
+        body,
+        re.IGNORECASE,
+    )
+    if signed_match:
+        return clean_url(signed_match.group(0))
+    order_url_match = re.search(
+        r'https://shopify\.com/\d+/account/orders/[A-Za-z0-9]+(?:/[A-Za-z0-9_/-]+)?(?:\?[^>\s]+)?',
+        body,
+        re.IGNORECASE,
+    )
+    return clean_url(order_url_match.group(0)) if order_url_match else ''
+
+
 def _extract_sb_body_order_items(text):
     summary_match = re.search(
         r'(?is)\bOrder\s+summary\b(.+?)(?:\bSubtotal\b|\bCustomer\s+information\b|\bTotal\s+due\b)',
@@ -7058,6 +7096,115 @@ def _extract_sb_body_order_items(text):
     return items
 
 
+def _extract_sb_body_order_items(text):
+    summary_match = re.search(
+        r'(?is)\bOrder\s+summary\b(.+?)(?:\bSubtotal\b|\bCustomer\s+information\b|\bTotal\s+due\b)',
+        text,
+    )
+    search_text = summary_match.group(1) if summary_match else text
+    lines = [line.strip() for line in search_text.splitlines() if line.strip()]
+    items = []
+    seen = set()
+    price_re = re.compile(r'(?:\$([\d,]+(?:\.\d{2})?)\b|\b([\d,]+\.\d{2})\b)')
+    quantity_re = re.compile(r'(?i)\s*[x×]\s*(\d+)\s*$')
+    boundary_re = re.compile(
+        r'(?i)\b(Subtotal|Shipping|Taxes?|Total paid|Total due|Order summary|Customer information)\b'
+    )
+
+    def is_noise(line):
+        return (
+            not line
+            or boundary_re.search(line)
+            or re.match(r'https?://', line, re.IGNORECASE)
+            or re.search(r'(?i)\b(View your order|Visit our store|Order Status AI Agent)\b', line)
+        )
+
+    def build_item(desc_lines, price_line):
+        price_match = price_re.search(price_line)
+        if not price_match:
+            return None
+        amount = _clean_price(price_match.group(1) or price_match.group(2))
+        current_text = price_re.sub('', price_line).strip(' -')
+        parts = [part for part in desc_lines if part and not is_noise(part)]
+        if current_text:
+            parts.append(current_text)
+        if not parts:
+            return None
+
+        quantity = '1'
+        qty_idx = None
+        qty_prefix = ''
+        for part_idx in range(len(parts) - 1, -1, -1):
+            qty_match = quantity_re.search(parts[part_idx])
+            if qty_match:
+                quantity = qty_match.group(1)
+                qty_idx = part_idx
+                qty_prefix = quantity_re.sub('', parts[part_idx]).strip(' -')
+                break
+
+        if qty_idx is None:
+            description = ' '.join(parts).strip(' -')
+        else:
+            product_parts = parts[:qty_idx]
+            if qty_prefix:
+                product_parts.append(qty_prefix)
+            description = ' '.join(product_parts).strip(' -')
+            variant = ' '.join(parts[qty_idx + 1:]).strip(' -')
+            description = f"{description} x {quantity}".strip()
+            if variant:
+                description = f"{description} - {variant}"
+        description = re.sub(r'\s+', ' ', description).strip(' -')
+        if not description:
+            return None
+
+        unit_price = amount
+        try:
+            qty_num = float(quantity)
+            amount_num = float(amount)
+            if qty_num:
+                unit_price = f"{amount_num / qty_num:.2f}"
+        except (TypeError, ValueError):
+            pass
+
+        return {
+            'item_number': '',
+            'quantity': _normalize_qty(quantity),
+            'units': 'Each',
+            'description': description,
+            'unit_price': unit_price,
+            'amount': amount,
+        }
+
+    desc_buffer = []
+    for line in lines:
+        if is_noise(line):
+            if desc_buffer and items:
+                variant = ' '.join(desc_buffer).strip(' -')
+                if variant and not price_re.search(variant) and not quantity_re.search(variant):
+                    items[-1]['description'] = f"{items[-1]['description']} - {variant}"
+                desc_buffer = []
+            continue
+        if price_re.search(line):
+            item = build_item(desc_buffer, line)
+            desc_buffer = []
+            if not item:
+                continue
+            key = (item['description'].lower(), item['quantity'], item['amount'])
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+            continue
+        desc_buffer.append(line)
+
+    if desc_buffer and items:
+        variant = ' '.join(desc_buffer).strip(' -')
+        if variant and not price_re.search(variant) and not quantity_re.search(variant):
+            items[-1]['description'] = f"{items[-1]['description']} - {variant}"
+
+    return items
+
+
 def parse_email_invoice(filepath, status_callback=None):
     """Parse a saved no-attachment email body invoice source."""
     cb = status_callback or (lambda msg, tag=None: None)
@@ -7077,6 +7224,7 @@ def parse_email_invoice(filepath, status_callback=None):
     text = _normalize_email_body_text(payload.get('message_text', ''))
     subject = str(payload.get('subject') or '')
     combined = f"{subject}\n{text}"
+    order_url = str(payload.get('order_url') or '').strip() or _extract_sb_body_order_url(text)
     cb(f"  Parsing S&B body invoice data from {filename}...")
 
     order_match = re.search(r'(?i)\bOrder\s*#\s*(\d+)', combined)
@@ -7121,6 +7269,7 @@ def parse_email_invoice(filepath, status_callback=None):
         'shipping_description': 'Shipping',
         'total': _clean_price(total_match.group(1)) if total_match else '',
         'line_items': line_items,
+        'source_url': order_url,
         'source_file': filename,
         'raw_text': text,
     }

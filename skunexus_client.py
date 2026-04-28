@@ -669,7 +669,11 @@ def infer_invoice_row_sku_from_po(skunexus_data, invoice_row, used_line_item_ids
     if not item:
         return '', ''
     product = item.get('product') or {}
-    return str(product.get('sku') or '').strip(), str(item.get('id') or '').strip()
+    sku = str(product.get('sku') or '').strip()
+    vendor = str((skunexus_data.get('vendor') or {}).get('name') or '').strip()
+    if _vendors_match(vendor, 'S&B Filters') or sku.upper().startswith('SB-'):
+        sku = re.sub(r'(?i)^SB-', '', sku).strip()
+    return sku, str(item.get('id') or '').strip()
 
 
 def validate_po_row(skunexus_data, invoice_row, vendor_aliases=None):

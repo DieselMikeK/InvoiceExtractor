@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import base64
 
-from gmail_client import GmailClient, _message_matches_time_filter
+from gmail_client import GmailClient, _extract_sb_body_order_url, _html_to_text, _message_matches_time_filter
 
 
 SB_BODY = """---------- Forwarded message ---------
@@ -44,6 +44,18 @@ customerservice@sbfilters.com
 
 
 class GmailClientDownloadTests(unittest.TestCase):
+    def test_extracts_sb_signed_order_url_from_html_anchor(self):
+        signed_url = (
+            'https://sbfilters.com/69841617189/orders/'
+            '3f8e07a9895c1840f03b593c7ba3effd/authenticate?key=abc123&syclid=xyz'
+        )
+        html = f'<a href="{signed_url.replace("&", "&amp;")}">View your order</a>'
+
+        text = _html_to_text(html)
+
+        self.assertIn(f'View your order {signed_url}', text)
+        self.assertEqual(_extract_sb_body_order_url(text), signed_url)
+
     def test_message_time_filter_allows_open_ended_ranges(self):
         message = {'internalDate': '1712520000000'}
 

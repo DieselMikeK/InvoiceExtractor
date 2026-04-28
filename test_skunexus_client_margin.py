@@ -92,6 +92,7 @@ class PoMarginTests(unittest.TestCase):
 
     def test_infers_missing_sb_sku_by_price_and_description(self):
         po_details = {
+            'vendor': {'name': 'S&B Filters'},
             'lineItems': {
                 'rows': [
                     {
@@ -107,7 +108,7 @@ class PoMarginTests(unittest.TestCase):
                     {
                         'id': 'line-2',
                         'product': {
-                            'sku': '83-1001',
+                            'sku': 'SB-83-1001',
                             'name': 'Cold Side Intercooler Pipe for 2017-2026 Ford Super Duty, 6.7L Powerstroke',
                         },
                         'quantity': 1,

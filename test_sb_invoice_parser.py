@@ -190,6 +190,99 @@ Ground
             'x 1 - Cotton Cleanable'
         ))
 
+    def test_sb_shopify_body_invoice_keeps_wrapped_multi_item_descriptions_separate(self):
+        body = """Order #743636
+PO Number #0064810
+Order summary
+Hot Side Intercooler Pipe for 2016-2026 Ford
+Powerstroke 6.7L x 1
+$166.83
+Cold Side Intercooler Pipe for 2017-2026 Ford Super Duty, 6.7L
+Powerstroke x 1
+$200.33
+Subtotal
+$367.16
+Shipping
+$19.50
+Total due May 28, 2026
+$386.66 USD
+Customer information
+Shipping address
+Bill Seeberger
+Billing address
+Diesel Power Products
+Payment
+Net 30: Due May 28, 2026
+Shipping method
+Ground
+"""
+        payload = {
+            'type': 'email_body_invoice',
+            'parser': 'sb_shopify_order',
+            'subject': 'Order #743636 Confirmed',
+            'message_text': body,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'SB_Order_743636.email.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f)
+
+            invoice_data = parse_email_invoice(path)
+
+        self.assertEqual(len(invoice_data['line_items']), 2)
+        self.assertEqual(
+            invoice_data['line_items'][0]['description'],
+            'Hot Side Intercooler Pipe for 2016-2026 Ford Powerstroke 6.7L x 1',
+        )
+        self.assertEqual(
+            invoice_data['line_items'][1]['description'],
+            'Cold Side Intercooler Pipe for 2017-2026 Ford Super Duty, 6.7L Powerstroke x 1',
+        )
+
+    def test_sb_shopify_body_invoice_keeps_single_wrapped_description(self):
+        body = """Order #743623
+PO Number #0064775
+Order summary
+Hot and Cold Side Boot Kit for 2003-2004 Ford
+F250/F350, 6.0L Powerstroke x 1
+$99.83
+Subtotal
+$99.83
+Shipping
+$12.00
+Total due May 28, 2026
+$111.83 USD
+Customer information
+Shipping address
+Ivan Castro
+Billing address
+Diesel Power Products
+Payment
+Net 30: Due May 28, 2026
+Shipping method
+Ground
+"""
+        payload = {
+            'type': 'email_body_invoice',
+            'parser': 'sb_shopify_order',
+            'subject': 'Order #743623 Confirmed',
+            'message_text': body,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'SB_Order_743623.email.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f)
+
+            invoice_data = parse_email_invoice(path)
+
+        self.assertEqual(len(invoice_data['line_items']), 1)
+        self.assertEqual(
+            invoice_data['line_items'][0]['description'],
+            'Hot and Cold Side Boot Kit for 2003-2004 Ford F250/F350, 6.0L Powerstroke x 1',
+        )
+
     def test_sb_shipping_cost_handles_nested_parentheses(self):
         cases = {
             'S&B I464016.pdf': '42.00',
