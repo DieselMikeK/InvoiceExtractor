@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix Carli stock-order detection for invoices shipped to the DPP warehouse.",
-    "requested_at":  "2026-04-28T16:24:20.5086472Z"
+    "notes":  "Fix S\u0026B no-attachment body invoice item parsing for model-year product names and split price lines.",
+    "requested_at":  "2026-04-28T17:43:27.3971878Z"
 }
