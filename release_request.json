@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "S\u0026B body invoice improvements: preserve View your order links for Bill No hyperlinks, fix wrapped multi-item descriptions, keep boot-kit descriptions intact, and normalize inferred S\u0026B SKUs by removing the SB- prefix.",
-    "requested_at":  "2026-04-28T22:39:05.4815286Z"
+    "notes":  "S\u0026B SKU inference now matches SkuNexus PO lines by product description/name first so SKUs carry into the sheet even when price or quantity validation fails.",
+    "requested_at":  "2026-04-28T23:19:57.9976389Z"
 }
