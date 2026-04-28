@@ -6919,7 +6919,14 @@ def _refresh_invoice_for_resolved_vendor(data, text, filepath, vendor_name):
 
 def _normalize_email_body_text(text):
     value = str(text or '')
-    value = value.replace('\u202f', ' ').replace('\xa0', ' ')
+    value = (
+        value
+        .replace('\u202f', ' ')
+        .replace('\xa0', ' ')
+        .replace('â€¯', ' ')
+        .replace('Â', '')
+        .replace('Ã—', '×')
+    )
     value = re.sub(r'\r\n?', '\n', value)
     value = re.sub(r'[ \t]+', ' ', value)
     value = re.sub(r'\n{3,}', '\n\n', value)
@@ -6976,6 +6983,8 @@ def _extract_sb_body_order_items(text):
     lines = [line.strip() for line in search_text.splitlines() if line.strip()]
     items = []
     seen = set()
+    quantity_line_re = re.compile(r'(?i)^(.+?)\s*[x×]\s*(\d+)\s*$')
+    price_re = re.compile(r'(?:\$([\d,]+(?:\.\d{2})?)\b|\b([\d,]+\.\d{2})\b)')
 
     for idx, line in enumerate(lines):
         if re.search(r'(?i)\b(Subtotal|Shipping|Taxes?|Total paid|Total due)\b', line):
@@ -6985,20 +6994,29 @@ def _extract_sb_body_order_items(text):
         if match:
             description = match.group(1).strip(' -')
             quantity = match.group(2)
+            description = f"{description} x {quantity}"
             amount = _clean_price(match.group(3))
         else:
-            price_match = re.search(r'\$?([\d,]+\.?\d{2})\b', line)
+            price_match = price_re.search(line)
             if not price_match:
                 continue
             quantity = '1'
-            amount = _clean_price(price_match.group(1))
-            description = re.sub(r'\$?[\d,]+\.?\d{2}\b', '', line).strip(' -')
+            amount = _clean_price(price_match.group(1) or price_match.group(2))
+            description = price_re.sub('', line).strip(' -')
             if idx > 0:
                 prev_match = re.search(r'(?i)^(.+?)\s*[x×]\s*(\d+)\s*$', lines[idx - 1].strip())
                 if prev_match:
                     description = prev_match.group(1).strip(' -')
                     quantity = prev_match.group(2)
-                    variant = re.sub(r'\$?[\d,]+\.?\d{2}\b', '', line).strip(' -')
+                    description = f"{description} x {quantity}"
+                    variant = price_re.sub('', line).strip(' -')
+                elif idx > 1:
+                    prev_prev_match = quantity_line_re.search(lines[idx - 2].strip())
+                    if prev_prev_match:
+                        description = prev_prev_match.group(1).strip(' -')
+                        quantity = prev_prev_match.group(2)
+                        description = f"{description} x {quantity}"
+                        variant = lines[idx - 1].strip(' -')
 
         if not description and idx > 0:
             description = lines[idx - 1].strip()
@@ -7009,7 +7027,7 @@ def _extract_sb_body_order_items(text):
             next_line = lines[idx + 1].strip()
             if (
                 next_line
-                and not re.search(r'\$?[\d,]+\.?\d{2}\b', next_line)
+                and not price_re.search(next_line)
                 and not re.search(r'(?i)\b(Subtotal|Shipping|Taxes?|Total paid|Total due)\b', next_line)
             ):
                 variant = next_line

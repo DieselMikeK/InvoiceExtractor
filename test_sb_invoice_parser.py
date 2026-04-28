@@ -139,7 +139,57 @@ Ground
         item = invoice_data['line_items'][0]
         self.assertEqual(item['quantity'], '1')
         self.assertEqual(item['unit_price'], '46.23')
-        self.assertEqual(item['description'], 'S&B Intake Replacement Filter - Cotton Cleanable')
+        self.assertEqual(item['description'], 'S&B Intake Replacement Filter x 1 - Cotton Cleanable')
+
+    def test_sb_shopify_body_invoice_does_not_parse_model_year_as_price(self):
+        body = """Order summary
+Cold Air Intake for 2018-2021 Ford F-150 Powerstroke 3.0L x 1
+Cotton Cleanable
+
+$253.93
+
+Subtotal
+$253.93
+Shipping
+$12.00
+Taxes
+$0.00
+Total due May 28, 2026
+$265.93 USD
+Customer information
+Shipping address
+Omar Calderon
+1300 Marden Rd
+Billing address
+Diesel Power Products
+Payment
+Net 30: Due May 28, 2026
+Shipping method
+Ground
+"""
+        payload = {
+            'type': 'email_body_invoice',
+            'parser': 'sb_shopify_order',
+            'subject': 'Order #743624 Confirmed',
+            'message_text': body,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'SB_Order_743624.email.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f)
+
+            invoice_data = parse_email_invoice(path)
+
+        self.assertEqual(len(invoice_data['line_items']), 1)
+        item = invoice_data['line_items'][0]
+        self.assertEqual(item['quantity'], '1')
+        self.assertEqual(item['unit_price'], '253.93')
+        self.assertEqual(item['description'], (
+            'Cold Air Intake for 2018-2021 Ford F-150 Powerstroke 3.0L '
+            'x 1 - Cotton Cleanable'
+        ))
+
     def test_sb_shipping_cost_handles_nested_parentheses(self):
         cases = {
             'S&B I464016.pdf': '42.00',
