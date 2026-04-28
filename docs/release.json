@@ -1,24 +1,24 @@
 {
-  "version": "1.2.59",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.59/InvoiceExtractor.exe",
-  "sha256": "d4eeffdc9a218c23a6b493a8c82a42f5f2928515359d7df1e9ce7bc2052b1e3d",
-  "notes": "S&B SKU inference now matches SkuNexus PO lines by product description/name first so SKUs carry into the sheet even when price or quantity validation fails.",
-  "published_at": "04/28/2026 23:22:37",
+  "version": "1.2.60",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.60/InvoiceExtractor.exe",
+  "sha256": "9302b18d87ef8dfd4466d9b0b7dcd84a9ff15934d26bb5f1be8a0578a55e76a7",
+  "notes": "Fix No Limit Fabrication OCR ship-to parsing so regular drop-ship invoices do not collapse into WILL CALL when our bill-to address appears beside the customer's ship-to address.",
+  "published_at": "04/28/2026 23:29:32",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.59/InvoiceExtractor.exe",
-      "sha256": "d4eeffdc9a218c23a6b493a8c82a42f5f2928515359d7df1e9ce7bc2052b1e3d"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.60/InvoiceExtractor.exe",
+      "sha256": "9302b18d87ef8dfd4466d9b0b7dcd84a9ff15934d26bb5f1be8a0578a55e76a7"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.59/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.60/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.59/update-InvoiceExtractorUpdater.exe",
-      "sha256": "a77e4742e94015e238b4b18b64f80f5734c58ab7dc0add98858df8509281fe34"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.60/update-InvoiceExtractorUpdater.exe",
+      "sha256": "4fafd2bcbea36060b3540ab5393792b0daa7051e7f4ac798617d5fd2a3b533d3"
     }
   ]
 }
