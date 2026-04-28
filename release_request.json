@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "S\u0026B SKU inference now matches SkuNexus PO lines by product description/name first so SKUs carry into the sheet even when price or quantity validation fails.",
-    "requested_at":  "2026-04-28T23:19:57.9976389Z"
+    "notes":  "Fix No Limit Fabrication OCR ship-to parsing so regular drop-ship invoices do not collapse into WILL CALL when our bill-to address appears beside the customer's ship-to address.",
+    "requested_at":  "2026-04-28T23:27:34.8206884Z"
 }
