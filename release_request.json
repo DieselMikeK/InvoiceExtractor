@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Reverted the Chrome/Selenium Shopify order-page parser. S\u0026B body invoices now keep email-body parsing and fill missing SKUs during SkuNexus validation by matching PO line items by price, quantity, amount, and description.",
-    "requested_at":  "2026-04-28T21:50:04.7197089Z"
+    "notes":  "S\u0026B body invoice improvements: preserve View your order links for Bill No hyperlinks, fix wrapped multi-item descriptions, keep boot-kit descriptions intact, and normalize inferred S\u0026B SKUs by removing the SB- prefix.",
+    "requested_at":  "2026-04-28T22:39:05.4815286Z"
 }
