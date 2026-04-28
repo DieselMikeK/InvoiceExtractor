@@ -515,6 +515,7 @@ def infer_vendor_from_folder_marker(filepath):
         'crl': 'Carli Suspension - $10 DS Fee',
         'ico': 'Icon Vehicle Dynamics',
         'co': 'Cognito Motorsports',
+        'nl': 'No Limit Fabrication',
     }
     try:
         abs_path = os.path.abspath(filepath)
@@ -1384,6 +1385,62 @@ def _will_call_customer_from_ship_to(text):
     return _will_call_customer_from_lines(_ship_to_block_lines(text))
 
 
+def _extract_no_limit_ship_to_lines(text):
+    """Extract No Limit's right-side ship-to block from OCR-collapsed text."""
+    if not text:
+        return []
+
+    lines = [str(line or '').strip() for line in str(text).splitlines() if str(line or '').strip()]
+    ship_lines = []
+    in_address_block = False
+
+    for line in lines:
+        if in_address_block and re.match(r'^\d{5,}\s+(?:Due|Net|Credit|Prepaid)\b', line, re.IGNORECASE):
+            break
+        if in_address_block and re.search(r'\b(?:Item\s+Code|Total|Balance\s+Due)\b', line, re.IGNORECASE):
+            break
+
+        candidate = ''
+        if re.search(r'Power\s+Products\s+Unlimited|Diesel\s+Power\s+Products', line, re.IGNORECASE):
+            in_address_block = True
+            candidate = re.sub(
+                r'^.*?(?:Power\s+Products\s+Unlimited\s*/\s*Diesel\s+Power|Diesel\s+Power\s+Products)\s*',
+                '',
+                line,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip()
+        elif in_address_block and re.match(r'^Products\s+\d+\b', line, re.IGNORECASE):
+            candidate = re.sub(r'^Products\s+', '', line, count=1, flags=re.IGNORECASE).strip()
+        elif in_address_block and re.search(r'5204\s+East\s+Broadway\s+Avenue', line, re.IGNORECASE):
+            candidate = re.sub(
+                r'^.*?5204\s+East\s+Broadway\s+Avenue\s*',
+                '',
+                line,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip()
+        elif in_address_block and re.search(r'Spokane\s+Valley,\s*WA\s+99212', line, re.IGNORECASE):
+            candidate = re.sub(
+                r'^.*?Spokane\s+Valley,\s*WA\s+99212\s*',
+                '',
+                line,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip()
+
+        candidate = re.sub(r'\s+', ' ', candidate).strip(' ,')
+        if not candidate:
+            continue
+        if _OUR_COMPANY_NAMES.search(candidate):
+            continue
+        if any(pattern.search(candidate) for pattern in _OUR_ADDRESS_PATTERNS):
+            continue
+        ship_lines.append(candidate)
+
+    return ship_lines
+
+
 def _extract_ii_total(text):
     """Extract Industrial Injection total from explicit footer lines."""
     if not text:
@@ -2242,6 +2299,23 @@ def _is_pd_vendor_name(name):
     if canonical_key and 'powerdistributing' in canonical_key:
         return True
     return False
+
+
+def _is_no_limit_vendor_name(name):
+    """Return True if vendor name looks like No Limit Fabrication."""
+    key = _normalize_vendor_key(name or '')
+    if key and ('nolimitfabrication' in key or 'nolimitenterprises' in key or key == 'nolimit'):
+        return True
+    canonical = normalize_vendor_name(name or '')
+    canonical_key = _normalize_vendor_key(canonical or '')
+    return bool(
+        canonical_key
+        and (
+            'nolimitfabrication' in canonical_key
+            or 'nolimitenterprises' in canonical_key
+            or canonical_key == 'nolimit'
+        )
+    )
 
 
 def _is_daystar_vendor_name(name):
@@ -6061,6 +6135,38 @@ def _apply_vendor_specific_overrides(data, text, filepath=None):
         if not has_freight_item and not str(data.get('shipping_cost') or '').strip():
             data['suppress_zero_shipping_row'] = True
 
+    elif _is_no_limit_vendor_name(vendor_name):
+        default_address = get_vendor_default_address(vendor_name)
+        if default_address:
+            data['vendor_address'] = default_address
+
+        default_terms = get_vendor_default_terms(vendor_name)
+        if default_terms:
+            data['terms'] = default_terms
+
+        ship_to_lines = _extract_no_limit_ship_to_lines(text)
+        customer = _clean_ship_to_contact_name(_customer_name_from_ship_to_lines(ship_to_lines))
+        if customer:
+            data['customer'] = customer
+
+        if not str(data.get('invoice_number') or '').strip():
+            invoice_match = re.search(
+                r'(?im)^\s*5317\s+Bonsai\s+Avenue\s+(\d{1,2}/\d{1,2}/\d{4})\s+(\d{4,})\s*$',
+                text,
+            )
+            if invoice_match:
+                if not str(data.get('date') or '').strip():
+                    data['date'] = _normalize_date_value(invoice_match.group(1))
+                data['invoice_number'] = invoice_match.group(2)
+
+        if not str(data.get('po_number') or '').strip():
+            po_match = re.search(
+                r'(?im)^\s*(00\d{4,})\s+Due\s+Upon\s+Receipt\b',
+                text,
+            )
+            if po_match:
+                data['po_number'] = po_match.group(1)
+
     elif _is_ats_vendor_name(vendor_name):
         default_address = get_vendor_default_address(vendor_name)
         if default_address:
@@ -7588,6 +7694,8 @@ def parse_invoice(
         ship_to_lines = _extract_sm_ship_to_lines(filepath)
     elif _is_fumoto_vendor_name(data.get('vendor', '')):
         ship_to_lines = _extract_fumoto_ship_to_lines(filepath)
+    elif _is_no_limit_vendor_name(data.get('vendor', '')):
+        ship_to_lines = _extract_no_limit_ship_to_lines(text)
 
     ship_to_is_ours = (
         _ship_to_our_address_from_lines(ship_to_lines)

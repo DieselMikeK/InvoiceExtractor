@@ -4,6 +4,7 @@ from unittest import mock
 from invoice_parser import (
     _extract_carli_ship_to_lines,
     _extract_label_value_pairs,
+    _extract_no_limit_ship_to_lines,
     _extract_redhead_ship_to_lines,
     _matches_internal_stock_customer_hint,
     _ship_to_our_address_from_lines,
@@ -195,6 +196,53 @@ class StockOrderDetectionTests(unittest.TestCase):
         self.assertFalse(data.get('stock_order'))
         self.assertEqual(data.get('po_number'), '0063208')
         self.assertEqual(data.get('customer'), 'ROBERT FRANCIS')
+        self.assertEqual(len(data.get('line_items') or []), 1)
+
+    def test_no_limit_drop_ship_does_not_mix_bill_to_into_will_call(self):
+        invoice_text = (
+            'in woainal Invoice\n'
+            '5317 Bonsai Avenue 4/28/2026 78092\n'
+            'Moorpark, CA 93021\n'
+            'Power Products Unlimited/Diesel Power Tristen Wood\n'
+            'Products 8854 Webster Rd\n'
+            '5204 East Broadway Avenue Camden-on-Gauley, WV\n'
+            'Spokane Valley, WA 99212\n'
+            '0064998 Due Upon Receipt uo 4/28/2026\n'
+            'EZL 100EEQOAA3 1 | EZ-Lynk Auto Agent 3 OBD Scan Tool 439.20 439.20\n'
+        )
+        parsed_invoice = {
+            'invoice_number': '78092',
+            'vendor': '',
+            'vendor_address': '',
+            'customer': 'Products 8854 Webster Rd',
+            'date': '4/28/2026',
+            'due_date': '',
+            'terms': '',
+            'po_number': '0064998',
+            'line_items': [
+                {
+                    'item_number': 'EZL 100EEQOAA3',
+                    'description': 'EZ-Lynk Auto Agent 3 OBD Scan Tool',
+                    'quantity': '1',
+                    'unit_price': '439.20',
+                    'amount': '439.20',
+                }
+            ],
+        }
+
+        self.assertEqual(
+            _extract_no_limit_ship_to_lines(invoice_text),
+            ['Tristen Wood', '8854 Webster Rd', 'Camden-on-Gauley, WV'],
+        )
+
+        with mock.patch('invoice_parser.pdfplumber.open', return_value=_mock_pdf_context()), \
+             mock.patch('invoice_parser.extract_text_from_pdf', return_value=invoice_text), \
+             mock.patch('invoice_parser.parse_invoice_text', return_value=parsed_invoice):
+            data = parse_invoice('C:\\temp\\training\\NL\\Invoice 78092.pdf')
+
+        self.assertEqual(data.get('vendor'), 'No Limit Fabrication')
+        self.assertFalse(data.get('stock_order'))
+        self.assertEqual(data.get('customer'), 'Tristen Wood')
         self.assertEqual(len(data.get('line_items') or []), 1)
 
 
