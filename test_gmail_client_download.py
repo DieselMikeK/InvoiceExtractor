@@ -4,7 +4,12 @@ import tempfile
 import unittest
 import base64
 
-from gmail_client import GmailClient, _message_matches_time_filter
+from gmail_client import (
+    GmailClient,
+    _extract_sb_body_order_url,
+    _html_to_text,
+    _message_matches_time_filter,
+)
 
 
 SB_BODY = """---------- Forwarded message ---------
@@ -44,6 +49,46 @@ customerservice@sbfilters.com
 
 
 class GmailClientDownloadTests(unittest.TestCase):
+    def test_extracts_sb_view_order_url(self):
+        body = (
+            'Order summary\n'
+            'View your order\n'
+            '<https://sbfilters.com/_t/c/v3/token>\n'
+            'or Visit our store\n'
+            '<https://sbfilters.com/store>\n'
+        )
+
+        self.assertEqual(
+            _extract_sb_body_order_url(body),
+            'https://sbfilters.com/_t/c/v3/token',
+        )
+
+    def test_extracts_sb_signed_order_url_from_html_anchor(self):
+        signed_url = (
+            'https://sbfilters.com/69841617189/orders/'
+            '3f8e07a9895c1840f03b593c7ba3effd/authenticate?key=abc123&syclid=xyz'
+        )
+        html = f'<a href="{signed_url.replace("&", "&amp;")}">View your order</a>'
+
+        text = _html_to_text(html)
+
+        self.assertIn(f'View your order {signed_url}', text)
+        self.assertEqual(_extract_sb_body_order_url(text), signed_url)
+
+    def test_extracts_sb_signed_order_url_from_google_redirect(self):
+        body = (
+            'View your order '
+            '<https://www.google.com/url?q=https%3A%2F%2Fsbfilters.com%2F69841617189'
+            '%2Forders%2F3f8e07a9895c1840f03b593c7ba3effd%2Fauthenticate'
+            '%3Fkey%3Dabc123%26syclid%3Dxyz&source=gmail>'
+        )
+
+        self.assertEqual(
+            _extract_sb_body_order_url(body),
+            'https://sbfilters.com/69841617189/orders/'
+            '3f8e07a9895c1840f03b593c7ba3effd/authenticate?key=abc123&syclid=xyz',
+        )
+
     def test_message_time_filter_allows_open_ended_ranges(self):
         message = {'internalDate': '1712520000000'}
 

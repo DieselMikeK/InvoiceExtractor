@@ -480,7 +480,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
             '_row_fill': PPE_STOCK_ORDER_FILL,
         }
         first_row_num = _write_row(row_data)
-        source_path = invoice_data.get('source_path') or ''
+        source_path = invoice_data.get('source_url') or invoice_data.get('source_path') or ''
         if (not is_csv) and first_row_num and bill_no and source_path:
             try:
                 link_cell = ws.cell(row=first_row_num, column=1)
@@ -649,7 +649,7 @@ def write_invoice_rows(filepath, invoice_data, status_callback=None):
         row_data['_sb_delivery_fee'] = True
 
     first_row_num = _write_row(row_data)
-    source_path = invoice_data.get('source_path') or ''
+    source_path = invoice_data.get('source_url') or invoice_data.get('source_path') or ''
     if (not is_csv) and first_row_num and bill_no and source_path:
         try:
             link_cell = ws.cell(row=first_row_num, column=1)

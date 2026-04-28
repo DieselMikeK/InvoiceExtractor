@@ -2,8 +2,16 @@ import os
 import json
 import tempfile
 import unittest
+from unittest import mock
 
-from invoice_parser import infer_vendor_from_sender, parse_email_invoice, parse_invoice
+from invoice_parser import (
+    _extract_sb_shopify_line_items_from_json,
+    _extract_sb_shopify_order_page_data,
+    _parse_sb_shopify_order_url,
+    infer_vendor_from_sender,
+    parse_email_invoice,
+    parse_invoice,
+)
 
 
 SB_BODY = """---------- Forwarded message ---------
@@ -189,6 +197,164 @@ Ground
             'Cold Air Intake for 2018-2021 Ford F-150 Powerstroke 3.0L '
             'x 1 - Cotton Cleanable'
         ))
+
+    def test_sb_shopify_order_page_text_extracts_skus(self):
+        page_text = """Order #743636
+PO #0064810
+1
+Hot Side Intercooler Pipe for 2016-2026 Ford Powerstroke 6.7L
+SKU: 83-2004
+$166.83
+1
+Cold Side Intercooler Pipe for 2017-2026 Ford Super Duty, 6.7L Powerstroke
+SKU: 83-1001
+$200.33
+Subtotal · 2 items
+$367.16
+Shipping
+$19.50
+Due May 28
+USD $386.66
+"""
+        data = _extract_sb_shopify_order_page_data(page_text)
+
+        self.assertEqual(data['invoice_number'], '743636')
+        self.assertEqual(data['po_number'], '0064810')
+        self.assertEqual(data['shipping_cost'], '19.50')
+        self.assertEqual(data['total'], '386.66')
+        self.assertEqual(len(data['line_items']), 2)
+        self.assertEqual(data['line_items'][0]['item_number'], '83-2004')
+        self.assertEqual(data['line_items'][0]['unit_price'], '166.83')
+        self.assertIn('Hot Side Intercooler Pipe', data['line_items'][0]['description'])
+        self.assertEqual(data['line_items'][1]['item_number'], '83-1001')
+
+    def test_sb_shopify_order_url_uses_rendered_body_text(self):
+        page_text = """Order #743636
+PO #0064810
+1
+Hot Side Intercooler Pipe for 2016-2026 Ford Powerstroke 6.7L
+SKU: 83-2004
+$166.83
+Subtotal Â· 1 item
+$166.83
+Shipping
+$19.50
+Due May 28
+USD $186.33
+"""
+
+        with mock.patch(
+            'invoice_parser._fetch_rendered_order_context',
+            return_value={'text': page_text, 'line_items': []},
+        ):
+            data = _parse_sb_shopify_order_url('https://sbfilters.com/order/authenticate?key=abc')
+
+        self.assertEqual(data['line_items'][0]['item_number'], '83-2004')
+        self.assertEqual(data['total'], '186.33')
+
+    def test_sb_shopify_line_items_parse_from_graphql_payload(self):
+        payload = {
+            'data': {
+                'order': {
+                    'lineItemContainers': [
+                        {
+                            'lineItems': {
+                                'nodes': [
+                                    {
+                                        'lineItem': {
+                                            'sku': '83-2004',
+                                            'title': 'Hot Side Intercooler Pipe',
+                                        }
+                                    },
+                                    {
+                                        'lineItem': {
+                                            'sku': '83-2004',
+                                            'title': 'Hot Side Intercooler Pipe',
+                                            'quantity': 1,
+                                            'price': {'amount': '166.83'},
+                                            'currentTotalPrice': {'amount': '166.83'},
+                                        }
+                                    },
+                                    {
+                                        'lineItem': {
+                                            'sku': '83-1001',
+                                            'title': 'Cold Side Intercooler Pipe',
+                                            'quantity': 1,
+                                            'price': {'amount': '200.33'},
+                                            'currentTotalPrice': {'amount': '200.33'},
+                                        }
+                                    },
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+
+        items = _extract_sb_shopify_line_items_from_json(payload)
+
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]['item_number'], '83-2004')
+        self.assertEqual(items[0]['unit_price'], '166.83')
+        self.assertEqual(items[1]['item_number'], '83-1001')
+
+    def test_sb_body_invoice_prefers_shopify_order_page_items_and_keeps_url(self):
+        order_url = 'https://shopify.com/69841617189/account/orders/token?locale=en-US'
+        payload = {
+            'type': 'email_body_invoice',
+            'parser': 'sb_shopify_order',
+            'subject': 'Order #743636 Confirmed',
+            'order_url': order_url,
+            'message_text': """Order #743636
+PO number #0064810
+Order summary
+Fallback Item x 1
+Cotton Cleanable
+$1.00
+Subtotal $1.00
+Shipping $0.00
+Taxes $0.00
+Total due May 28, 2026 $1.00 USD
+Customer information
+Shipping address
+Test Customer
+Billing address
+Diesel Power Products
+Payment
+Net 30: Due May 28, 2026
+Shipping method
+Ground
+""",
+        }
+        page_data = {
+            'line_items': [
+                {
+                    'item_number': '83-2004',
+                    'quantity': '1',
+                    'units': 'Each',
+                    'description': 'Hot Side Intercooler Pipe',
+                    'unit_price': '166.83',
+                    'amount': '166.83',
+                }
+            ],
+            'subtotal': '166.83',
+            'shipping_cost': '19.50',
+            'total': '186.33',
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'SB_Order_743636.email.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f)
+
+            with mock.patch('invoice_parser._parse_sb_shopify_order_url', return_value=page_data):
+                invoice_data = parse_email_invoice(path)
+
+        self.assertEqual(invoice_data['source_url'], order_url)
+        self.assertEqual(invoice_data['line_items'][0]['item_number'], '83-2004')
+        self.assertEqual(invoice_data['line_items'][0]['unit_price'], '166.83')
+        self.assertEqual(invoice_data['shipping_cost'], '19.50')
 
     def test_sb_shipping_cost_handles_nested_parentheses(self):
         cases = {

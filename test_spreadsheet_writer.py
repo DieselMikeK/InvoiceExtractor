@@ -2,11 +2,47 @@ import os
 import tempfile
 import unittest
 
+from openpyxl import load_workbook
+
 from invoice_parser import parse_invoice
 from spreadsheet_writer import read_spreadsheet_rows, write_invoice_to_spreadsheet
 
 
 class SpreadsheetWriterTests(unittest.TestCase):
+    def test_bill_no_hyperlink_prefers_source_url(self):
+        invoice_data = {
+            'invoice_number': '743636',
+            'vendor': 'S&B Filters',
+            'vendor_address': '15461 Slover Avenue, Fontana CA 92337',
+            'terms': 'Net 30',
+            'date': '4/28/2026',
+            'due_date': '5/28/2026',
+            'po_number': '0064810',
+            'customer': 'Bill Seeberger',
+            'total': '386.66',
+            'shipping_cost': '19.50',
+            'source_path': 'Invoices/invoices_4-28/SB_Order_743636.email.json',
+            'source_url': 'https://shopify.com/69841617189/account/orders/token?locale=en-US',
+            'line_items': [
+                {
+                    'item_number': '83-2004',
+                    'description': 'Hot Side Intercooler Pipe',
+                    'quantity': '1',
+                    'unit_price': '166.83',
+                    'amount': '166.83',
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, 'source_url_test.xlsx')
+            write_invoice_to_spreadsheet(output_path, invoice_data)
+            wb = load_workbook(output_path)
+            link = wb.active.cell(row=2, column=1).hyperlink
+
+        self.assertIsNotNone(link)
+        self.assertEqual(link.target, invoice_data['source_url'])
+
     def test_dpp_discount_exports_blank_sku_only(self):
         invoice_data = {
             'invoice_number': 'INV-1',
