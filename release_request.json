@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Fix No Limit Fabrication OCR ship-to parsing so regular drop-ship invoices do not collapse into WILL CALL when our bill-to address appears beside the customer's ship-to address.",
-    "requested_at":  "2026-04-28T23:27:34.8206884Z"
+    "notes":  "Detect account statement PDFs, including Power Distributing statements, as not invoices so statement detail rows are not imported as bill line items.",
+    "requested_at":  "2026-05-01T21:47:08.1693703Z"
 }
