@@ -64,6 +64,38 @@ FREIGHT_KEYWORDS = [
 ]
 
 
+def _is_statement_document(text, filename=''):
+    """Return True for account statements that list invoices but are not invoices."""
+    name = os.path.basename(str(filename or '')).lower()
+    if re.search(r'\bstatement\b', name, re.IGNORECASE):
+        return True
+
+    if not text:
+        return False
+
+    lines = [str(line or '').strip() for line in str(text).splitlines() if str(line or '').strip()]
+    first_lines = '\n'.join(lines[:25])
+    full_text = '\n'.join(lines)
+    first_word_is_statement = bool(lines and re.match(r'^statement\b', lines[0], re.IGNORECASE))
+    has_statement_header = bool(
+        re.search(r'\bCustomer\s+Customer\s+#\s+Statement\s+Date\b', first_lines, re.IGNORECASE)
+        or re.search(r'\bStatement\s+Date\s+Page\s+#\b', first_lines, re.IGNORECASE)
+    )
+    has_statement_table = bool(
+        re.search(
+            r'Invoice\s+Date\s+Due\s+Date\s+Type\s+Status\s+Invoice\s+#\s+Customer\s+PO\s+#',
+            full_text,
+            re.IGNORECASE,
+        )
+    )
+    has_remittance = bool(re.search(r'Please\s+Return\s+This\s+Portion\s+With\s+Your\s+Remittance', full_text, re.IGNORECASE))
+    has_net_due = bool(re.search(r'Total\s+Net\s+Amount\s+Due', full_text, re.IGNORECASE))
+
+    return (first_word_is_statement and (has_statement_header or has_statement_table)) or (
+        has_statement_header and has_statement_table and (has_remittance or has_net_due)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Vendor Normalization (from vendors.csv)
 # ---------------------------------------------------------------------------
@@ -7443,6 +7475,10 @@ def parse_invoice(
         else:
             cb(f"  Could not extract text from {filename} (OCR not available)", "error")
             return None
+
+    if _is_statement_document(text, filename):
+        cb(f"  Not an invoice (statement document): {filename}", "warning")
+        return {'not_an_invoice': True}
 
     # Step 3: Parse the extracted text (pass filepath for table extraction)
     cb(f"  Parsing invoice data from {filename}...")
