@@ -1511,6 +1511,11 @@ def detect_vendor(text):
     3. Known vendors list
     """
 
+    # PPE invoices can ship to Bakersfield customers, which must not override the
+    # issuer letterhead by matching another vendor's address alias.
+    if re.search(r'(?im)^\s*Pacific\s+Performance\s+Engineering(?:\s+Page:\s*\d+)?\s*$', text or ''):
+        return 'Pacific Performance Engineering - $5 DS Fee'
+
     # Strategy 0: Address alias match (highest confidence)
     address_vendor = _find_vendor_by_address_alias(text)
     if address_vendor:
