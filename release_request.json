@@ -1,4 +1,4 @@
 ﻿{
-    "notes":  "Detect account statement PDFs, including Power Distributing statements, as not invoices so statement detail rows are not imported as bill line items.",
-    "requested_at":  "2026-05-01T21:47:08.1693703Z"
+    "notes":  "Detect Industrial Injection STOCKORDER invoices as stock orders so I-431260 writes one stock summary row with PO 63292.",
+    "requested_at":  "2026-05-04T17:48:20.7226360Z"
 }
