@@ -245,6 +245,61 @@ class StockOrderDetectionTests(unittest.TestCase):
         self.assertEqual(data.get('customer'), 'Tristen Wood')
         self.assertEqual(len(data.get('line_items') or []), 1)
 
+    def test_industrial_injection_stockorder_marker_collapses_to_stock_order(self):
+        invoice_text = (
+            'INVOICE\n'
+            'I-431260\n'
+            'INDUSTRIAL INJECTION SERVICE, INC. Date: 2026-05-01\n'
+            'Bill To:Power Products Unlimited Ship To:Power Products Unlimited\n'
+            '5204 E. Broadway Ave. 6200 E. Main Ave.\n'
+            'Spokane, WA 99212 US Building 1 Suite A\n'
+            'Spokane, WA 99212 US\n'
+            'Date Ship Via Tracking Terms\n'
+            '2026-05-01 EXTERNAL STOCKORDER OD 78081071454 NET30\n'
+            'Purchase Order Number Order Date Sales Person Our Order\n'
+            '63292 2026-04-27 18 S-ORD357409\n'
+        )
+        parsed_invoice = {
+            'invoice_number': 'I-431260',
+            'vendor': 'Industrial Injection',
+            'vendor_address': '',
+            'customer': 'Power Products Unlimited',
+            'date': '2026-05-01',
+            'due_date': '',
+            'terms': 'NET30',
+            'po_number': '63292',
+            'tracking_number': '78081071454',
+            'shipping_method': 'EXTERNAL STOCKORDER OD',
+            'ship_date': '',
+            'shipping_tax_code': '',
+            'shipping_tax_rate': '',
+            'subtotal': '',
+            'shipping_cost': '',
+            'shipping_description': '',
+            'total': '32588.29',
+            'line_items': [
+                {
+                    'item_number': '1464650366',
+                    'description': '1989-1993 Cummins 12 Valve Governor Spring',
+                    'quantity': '1',
+                    'unit_price': '16.42',
+                    'amount': '16.42',
+                }
+            ],
+        }
+
+        with mock.patch('invoice_parser.pdfplumber.open', return_value=_mock_pdf_context()), \
+             mock.patch('invoice_parser.extract_text_from_pdf', return_value=invoice_text), \
+             mock.patch('invoice_parser.parse_invoice_text', return_value=parsed_invoice):
+            data = parse_invoice('C:\\temp\\I-431260.pdf')
+
+        self.assertEqual(data.get('po_number'), '63292')
+        self.assertTrue(data.get('stock_order'))
+        self.assertEqual(data.get('stock_order_description'), 'STOCK ORDER')
+        self.assertEqual(data.get('customer'), 'Diesel Power Products')
+        self.assertEqual(data.get('line_items'), [])
+        self.assertEqual(data.get('total'), '')
+
 
 if __name__ == '__main__':
     unittest.main()

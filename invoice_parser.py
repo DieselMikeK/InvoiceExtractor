@@ -1490,6 +1490,11 @@ def _extract_ii_total(text):
     return ''
 
 
+def _has_ii_stock_order_marker(text):
+    """Return True when an Industrial Injection invoice identifies a stock order."""
+    return bool(re.search(r'\bstock\s*order\b', str(text or ''), re.IGNORECASE))
+
+
 # ---------------------------------------------------------------------------
 # Vendor Detection
 # ---------------------------------------------------------------------------
@@ -7681,6 +7686,23 @@ def parse_invoice(
         cb(
             "  Fleece stock-order invoice detected from internal ship-to customer; "
             "outputting STOCK ORDER summary row "
+            f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
+            "warning"
+        )
+    elif _is_ii_vendor_name(data.get('vendor', '')) and (
+        _has_ii_stock_order_marker(text)
+        or _matches_internal_stock_customer_hint(data.get('customer', ''))
+    ):
+        _apply_stock_order_summary(
+            data,
+            description='STOCK ORDER',
+            customer='Diesel Power Products',
+        )
+        bill_no = str(data.get('invoice_number') or '').strip() or 'N/A'
+        po_number = str(data.get('po_number') or '').strip() or 'N/A'
+        cb(
+            "  Industrial Injection stock-order invoice detected; outputting "
+            "STOCK ORDER summary row "
             f"(Bill No: {bill_no}, Memo/PO: {po_number}; line items and totals suppressed).",
             "warning"
         )
