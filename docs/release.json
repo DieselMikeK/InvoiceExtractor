@@ -1,24 +1,24 @@
 {
-  "version": "1.2.62",
-  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.62/InvoiceExtractor.exe",
-  "sha256": "c74038ec67ee158ee4baec3c3983cafaf468505e32a1984adf104144bb85fcf5",
-  "notes": "Detect Industrial Injection STOCKORDER invoices as stock orders so I-431260 writes one stock summary row with PO 63292.",
-  "published_at": "05/04/2026 17:49:54",
+  "version": "1.2.63",
+  "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.63/InvoiceExtractor.exe",
+  "sha256": "784e22c0fd286360c10c982dbddde159cba23d1d637cfc077011a705003f997e",
+  "notes": "Prefer Pacific Performance Engineering invoice letterhead over ship-to address aliases so P-INV270264 is not imported as Cognito.",
+  "published_at": "05/04/2026 18:16:54",
   "files": [
     {
       "relative_path": "InvoiceExtractor.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.62/InvoiceExtractor.exe",
-      "sha256": "c74038ec67ee158ee4baec3c3983cafaf468505e32a1984adf104144bb85fcf5"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.63/InvoiceExtractor.exe",
+      "sha256": "784e22c0fd286360c10c982dbddde159cba23d1d637cfc077011a705003f997e"
     },
     {
       "relative_path": "app/vendors.csv",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.62/app-vendors.csv",
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.63/app-vendors.csv",
       "sha256": "bf90ed79b4c2e80afbf80da2c328ead956048c3079b17f59a54337b5857ef633"
     },
     {
       "relative_path": "update/InvoiceExtractorUpdater.exe",
-      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.62/update-InvoiceExtractorUpdater.exe",
-      "sha256": "89b74667bac69b23833f5db5dcdb2120f9e9f00ce57042b0ed7cfb621d12aa45"
+      "download_url": "https://github.com/DieselMikeK/InvoiceExtractor/releases/download/v1.2.63/update-InvoiceExtractorUpdater.exe",
+      "sha256": "f23ad1e42b59fcbe9cf3f55208d0c561c27a1a25bf5ac32d2ebe871feb765276"
     }
   ]
 }
